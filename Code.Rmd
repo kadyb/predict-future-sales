@@ -54,8 +54,8 @@ library("data.table")
 # Load data
 
 ```{r message = FALSE}
-salesTrain = fread("data/sales_train_v2.csv", showProgress = FALSE)
-items = fread("data/items.csv", drop = 1)
+sales = fread("data/sales_train_v2.csv", showProgress = FALSE)
+items = fread("data/items.csv", encoding = "UTF-8")
 shops = fread("data/shops.csv", encoding = "UTF-8")
 # itemCategories = fread("data/item_categories.csv", encoding = "UTF-8")
 ```
@@ -65,20 +65,20 @@ The **fread** function is used to read data, which is about 10 times faster than
 ## Data conversion
 
 ```{r}
-salesTrain$date = as.IDate(as.Date(salesTrain$date, format = "%d.%m.%Y"))
+sales$date = as.IDate(as.Date(sales$date, format = "%d.%m.%Y"))
 ```
 
 Convert the date to the correct format (**"%Y-%m-%d"**) and type.
 
 ```{r}
-salesTrain = merge(salesTrain, items, by = "item_id")
+sales = merge(sales, items, by = "item_id")
 ```
 
 Merge items dataset with sales by **"item_id"** column.
 
 ```{r}
 factorCols = c("item_id", "shop_id", "item_category_id")
-salesTrain[, (factorCols) := lapply(.SD, factor), .SDcols = factorCols]
+sales[, (factorCols) := lapply(.SD, factor), .SDcols = factorCols]
 ```
 
 Convert selected variables to factor data type.
@@ -90,7 +90,7 @@ Convert selected variables to factor data type.
 ### Dimension
 
 ```{r}
-dim(salesTrain)
+dim(sales)
 ```
 
 The analyzed dataset consists of 2 935 849 rows and 7 columns.
@@ -99,7 +99,7 @@ The analyzed dataset consists of 2 935 849 rows and 7 columns.
 
 ```{r}
 # The fastest way from tested to check NA in columns
-apply(sapply(salesTrain, is.na), 2, function(x) any(x))
+apply(sapply(sales, is.na), 2, function(x) any(x))
 ```
 
 There were no missing values in this dataset.
@@ -109,7 +109,7 @@ There were no missing values in this dataset.
 ```{r}
 # Sort this descending!!
 
-ggplot(salesTrain, aes(x = shop_id)) +
+ggplot(sales, aes(x = shop_id)) +
   geom_bar() +
   labs(title = "Total sales by stores") +
   xlab("Shop ID") +
@@ -118,10 +118,12 @@ ggplot(salesTrain, aes(x = shop_id)) +
   theme_light()
 ```
 
+Based on the chart, we can notice a strong unbalance in stores sales. The 5 stores with the largest total number of sales are located respectively in Moscow, Moscow, Khimki, Moscow and Saint Petersburg. However, the worst results are recorded in stores in Novosibirsk, Zhukovsky and astonishingly in Moscow.
+
 ```{r}
 # Add regression trend!!
 
-ggplot(salesTrain, aes(x = date_block_num)) +
+ggplot(sales, aes(x = date_block_num)) +
   geom_bar() +
   geom_vline(xintercept = 12.5) +
   geom_vline(xintercept = 24.5) +
@@ -134,10 +136,12 @@ ggplot(salesTrain, aes(x = date_block_num)) +
   theme_light()
 ```
 
+The two months with the largest number of unique sales are December 2014 and 2015. There is a downward trend over the years.
+
 ### Outliers
 
 ```{r fig.height = 2, fig.width = 7}
-p1 = ggplot(salesTrain, aes(y = item_price)) +
+p1 = ggplot(sales, aes(y = item_price)) +
   geom_boxplot() +
   scale_y_continuous(breaks = c(0, 100000, 200000, 300000),
                      labels = c("0", "100000", "200000", "300000")) +
@@ -149,7 +153,7 @@ p1 = ggplot(salesTrain, aes(y = item_price)) +
         axis.text.y = element_blank(),
         axis.ticks.y = element_blank())
 
-p2 = ggplot(salesTrain, aes(y = item_cnt_day)) +
+p2 = ggplot(sales, aes(y = item_cnt_day)) +
   geom_boxplot() +
   scale_y_continuous(breaks = c(0, 500, 1000, 1500, 2000),
                      labels = c("0", "500", "1000", "1500", "2000")) +
@@ -166,12 +170,75 @@ p2 = ggplot(salesTrain, aes(y = item_cnt_day)) +
 plot_grid(p1, p2)
 ```
 
+There are many outliers that need to be carefully analyzed and then correct or delete them.
+
+**Prices of all products**
+
+```{r}
+head(sales[order(-item_price), ], 10)
+```
+
+The first item sold for 307 980 rubles is a remote control software sold in one transaction to 522 people, which results in such a high price. The original value was divided by 522.
+
+The second outlier is the delivery service for a private online store. Comparing this value with the median price of this service (`r median(sales[item_id == 11365, item_price])`), it appears to be incorrect. This row has been removed from dataset.
+
+```{r}
+sales[item_price == 307980, item_price := 307980/522]
+sales = sales[!(item_id == 11365 & item_price == 59200)]
+```
+
+The next values seem to be valid. They concern i.a. collector's edition of chess, specialized software or limited edition of consoles.
+
+```{r}
+sales[item_price == -1]
+```
+
+One negative value appears, which is probably also an error. The median value of other products with this ID is `r median(sales[item_id == 2973, item_price])`. This row has been removed.
+
+```{r}
+sales = sales[!(item_id == 2973 & item_price == -1)]
+```
+
+**Daily sold products**
+
+```{r}
+head(sales[order(-item_cnt_day), ])
+```
+
+The largest number of transactions concerns the delivery service to the destination point. However, it is also probably incorrect. The cost of the service is significantly underestimated compared to others. This is well illustrated in the figure below.
+
+```{r fig.height = 3, fig.width = 6}
+cnt_df = data.frame(price = sales[item_id == 11373, item_price],
+                    amount = sales[item_id == 11373, item_cnt_day])
+
+ggplot(cnt_df, aes(x = price, y = amount, size = amount/price)) +
+  geom_point(show.legend = FALSE) +
+  labs(title = "Delivery service") +
+  xlab("Amount") +
+  ylab("Price") +
+  theme_light()
+```
+
+```{r}
+sales = sales[!(item_id == 11373 & item_cnt_day == 2169)]
+```
+
+The outlier mentioned above has been removed.
+
+```{r}
+head(sales[order(item_cnt_day), ])
+```
+
+Negative values appear in the **"item_cnt_day"** column, which probably means product returns. In total, `r length(sales[item_cnt_day < 0, item_cnt_day])` returns were made and `r abs(sum(sales[item_cnt_day < 0, item_cnt_day]))` products were returned. These values have been preserved unchanged.
+
+## Data mining
+
 # Feature engineer
 
 1. Extract month and year from date to separate variables.
 ```{r}
-salesTrain$month = as.factor(month(salesTrain$date))
-salesTrain$year = as.factor(year(salesTrain$date))
+sales$month = as.factor(month(sales$date))
+sales$year = as.factor(year(sales$date))
 ```
 
 2. Create a variable with the names of the places where the stores are located.
@@ -201,15 +268,18 @@ These two locations in Yakutsk probably mean the same stores, although they have
 print(shops$shop_name[c(11, 12)])
 ```
 
-A similar situation is in Zhukovsky. Store names differ only by one character (? instead of 2).
+A similar situation is in Zhukovsky. Store names differ only by one character ("?" instead of "2").
 
 # Summary
 
 # TODO
 1. kiedy produkt pojawil sie na rynku
 2. ile czasu produkt byl na rynku
+3. dodac sredni kurs miesieczny rubel-dolar
+4. dodac swieta panstwowe w rosji (https://www.timeanddate.com/calendar/)
+5. liczba dni targowych (http://fs.moex.com/files/3791/)
 
-1. wyznaczyc kategorie przedmiotow na podstawie podobienstwa ich nazw
+1. wyznaczyc kategorie przedmiotow na podstawie podobienstwa ich nazw (biblioteka "stringdist")
 
 1. ensemble modeling,
 2. lstm,
