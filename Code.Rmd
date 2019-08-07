@@ -1,0 +1,223 @@
+---
+title: "<center> **Predict Future Sales** <center>"
+author: "<center> **Krzysztof Dyba** </center>"
+date: "<center> `r Sys.Date()` </center>"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    theme: spacelab
+    highlight: tango
+---
+
+<style>
+body {text-align: justify}
+</style>
+
+# Introduction
+
+The goal of this project is to predict the total amount of products sold in every shop in the future. Time-series dataset containing historical daily sales data was provided by **1C Company**, which is one of the largest Russian software firms.
+
+## Files description
+The following files were provided:
+
+1. **sales_train.csv** - the training set. Daily historical data from January 2013 to October 2015:
+    + **date** - date in format dd/mm/yyyy,
+    + **date_block_num** - a consecutive month number (January 2013 is 0, October 2015 is 33),
+    + **shop_id** - unique identifier of a shop,
+    + **item_id** - unique identifier of a product,
+    + **item_price** - current price of an item,
+    + **item_cnt_day** - number of products sold,
+2. **items.csv** - supplemental information about the items/products:
+    + **item_name** - name of item,
+    + **item_id** - unique identifier of a product,
+    + **item_category_id** - unique identifier of item category,
+3. **item_categories.csv** - supplemental information about the items categories:
+    + **item_category_id** - unique identifier of item category,
+    + **item_category_name** - name of item category,
+4. **shops.csv** - supplemental information about the shops:
+    + **shop_id** - unique identifier of a shop,
+    + **shop_name** - name of shop.
+
+```{r include = FALSE}
+startTime = Sys.time()
+```
+
+# Load libraries
+
+```{r message = FALSE}
+library("ggplot2")
+library("cowplot")
+library("data.table")
+```
+
+# Load data
+
+```{r message = FALSE}
+salesTrain = fread("data/sales_train_v2.csv", showProgress = FALSE)
+items = fread("data/items.csv", drop = 1)
+shops = fread("data/shops.csv", encoding = "UTF-8")
+# itemCategories = fread("data/item_categories.csv", encoding = "UTF-8")
+```
+
+The **fread** function is used to read data, which is about 10 times faster than the standard **read.csv** function. 
+
+## Data conversion
+
+```{r}
+salesTrain$date = as.IDate(as.Date(salesTrain$date, format = "%d.%m.%Y"))
+```
+
+Convert the date to the correct format (**"%Y-%m-%d"**) and type.
+
+```{r}
+salesTrain = merge(salesTrain, items, by = "item_id")
+```
+
+Merge items dataset with sales by **"item_id"** column.
+
+```{r}
+factorCols = c("item_id", "shop_id", "item_category_id")
+salesTrain[, (factorCols) := lapply(.SD, factor), .SDcols = factorCols]
+```
+
+Convert selected variables to factor data type.
+
+# Exploratory data analysis
+
+## First look {.tabset .tabset-fade}
+
+### Dimension
+
+```{r}
+dim(salesTrain)
+```
+
+The analyzed dataset consists of 2 935 849 rows and 7 columns.
+
+### Missing data
+
+```{r}
+# The fastest way from tested to check NA in columns
+apply(sapply(salesTrain, is.na), 2, function(x) any(x))
+```
+
+There were no missing values in this dataset.
+
+### Sales
+
+```{r}
+# Sort this descending!!
+
+ggplot(salesTrain, aes(x = shop_id)) +
+  geom_bar() +
+  labs(title = "Total sales by stores") +
+  xlab("Shop ID") +
+  ylab("Sales") +
+  coord_flip() +
+  theme_light()
+```
+
+```{r}
+# Add regression trend!!
+
+ggplot(salesTrain, aes(x = date_block_num)) +
+  geom_bar() +
+  geom_vline(xintercept = 12.5) +
+  geom_vline(xintercept = 24.5) +
+  annotate("text", x = 2, y = 150000, label = "2013") +
+  annotate("text", x = 14, y = 150000, label = "2014") +
+  annotate("text", x = 26, y = 150000, label = "2015") +
+  labs(title = "Unique sales by month") +
+  xlab("Month") +
+  ylab("Sales") +
+  theme_light()
+```
+
+### Outliers
+
+```{r fig.height = 2, fig.width = 7}
+p1 = ggplot(salesTrain, aes(y = item_price)) +
+  geom_boxplot() +
+  scale_y_continuous(breaks = c(0, 100000, 200000, 300000),
+                     labels = c("0", "100000", "200000", "300000")) +
+  labs(title = "Prices of all products") +
+  ylab("Price") +
+  coord_flip() +
+  theme_light() +
+  theme(axis.title.y = element_blank(),
+        axis.text.y = element_blank(),
+        axis.ticks.y = element_blank())
+
+p2 = ggplot(salesTrain, aes(y = item_cnt_day)) +
+  geom_boxplot() +
+  scale_y_continuous(breaks = c(0, 500, 1000, 1500, 2000),
+                     labels = c("0", "500", "1000", "1500", "2000")) +
+  labs(title = "Daily sold products") +
+  ylab("Sold products") +
+  coord_flip() +
+  theme_light() +
+  theme_light() +
+  theme(axis.title.y = element_blank(),
+        axis.text.y = element_blank(),
+        axis.ticks.y = element_blank())
+
+# Function "plot_grid" is faster than "grid.arrange" (about 15 s)
+plot_grid(p1, p2)
+```
+
+# Feature engineer
+
+1. Extract month and year from date to separate variables.
+```{r}
+salesTrain$month = as.factor(month(salesTrain$date))
+salesTrain$year = as.factor(year(salesTrain$date))
+```
+
+2. Create a variable with the names of the places where the stores are located.
+```{r}
+shopLoc = c("Yakutsk", "Yakutsk", "Adygea", "Balashikha", "Volzhsky", "Vologda",
+            "Voronezh", "Voronezh", "Voronezh", "Outbound trade", "Zhukovsky",
+            "Zhukovsky", "Online store private", "Kazan", "Kazan", "Kaluga", "Kolomna",
+            "Krasnoyarsk", "Krasnoyarsk", "Kursk", "Moscow", "Moscow", "Moscow",
+            "Moscow", "Moscow", "Moscow", "Moscow", "Moscow", "Moscow",
+            "Moscow", "Moscow", "Moscow", "Moscow", "Mytishchi", "Nizhny Novgorod",
+            "Nizhny Novgorod", "Novosibirsk", "Novosibirsk", "Omsk", "Rostov-on-Don",
+            "Rostov-on-Don", "Rostov-on-Don", "Saint Petersburg", "Saint Petersburg",
+            "Samara", "Samara", "Sergiyev Posad", "Surgut", "Tomsk", "Tyumen",
+            "Tyumen", "Tyumen", "Ufa", "Ufa", "Khimki", "Online store 1C", 
+            "Chekhov", "Yakutsk", "Yakutsk", "Yaroslavl")
+shopLoc = factor(shopLoc)
+shopLabels = as.numeric(shopLoc)
+```
+
+```{r}
+print(shops$shop_name[c(1, 2, 58, 59)])
+```
+
+These two locations in Yakutsk probably mean the same stores, although they have different IDs.
+
+```{r}
+print(shops$shop_name[c(11, 12)])
+```
+
+A similar situation is in Zhukovsky. Store names differ only by one character (? instead of 2).
+
+# Summary
+
+# TODO
+1. kiedy produkt pojawil sie na rynku
+2. ile czasu produkt byl na rynku
+
+1. wyznaczyc kategorie przedmiotow na podstawie podobienstwa ich nazw
+
+1. ensemble modeling,
+2. lstm,
+3. hierarchical time series
+
+
+---
+
+<center> <font size = "2"> <i>
+The code was executed in `r round(difftime(Sys.time(), startTime, units = "mins"))` min.
+<center> </font> </i>
