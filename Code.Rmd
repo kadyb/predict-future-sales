@@ -3,11 +3,12 @@ title: "<center> **Predict Future Sales** <center>"
 author: "<center> **Krzysztof Dyba** </center>"
 date: "<center> `r Sys.Date()` </center>"
 output:
-  html_document:
-    toc: true
-    toc_float: true
-    theme: spacelab
+  html_document: 
+    toc: yes
+    toc_float: yes
     highlight: tango
+    theme: spacelab
+    df_print: kable
 ---
 
 <style>
@@ -95,6 +96,15 @@ dim(sales)
 
 The analyzed dataset consists of 2 935 849 rows and 7 columns.
 
+### Groups count
+```{r}
+paste0("Shops: ", length(levels(sales[, shop_id])))
+paste0("Items: ", length(levels(sales[, item_id])))
+paste0("Items categories: ", length(levels(sales[, item_category_id])))
+```
+
+Sales data come from 60 stores, which sold 21 807 different items grouped into 84 categories.
+
 ### Missing data
 
 ```{r}
@@ -107,10 +117,10 @@ There were no missing values in this dataset.
 ### Sales
 
 ```{r}
-# Sort this descending!!
+shop_id_grouped = sales[, .N, by = .(shop_id)]
 
-ggplot(sales, aes(x = shop_id)) +
-  geom_bar() +
+ggplot(shop_id_grouped, aes(x = reorder(shop_id, N), y = N)) +
+  geom_col() +
   labs(title = "Total sales by stores") +
   xlab("Shop ID") +
   ylab("Sales") +
@@ -121,22 +131,20 @@ ggplot(sales, aes(x = shop_id)) +
 Based on the chart, we can notice a strong unbalance in stores sales. The 5 stores with the largest total number of sales are located respectively in Moscow, Moscow, Khimki, Moscow and Saint Petersburg. However, the worst results are recorded in stores in Novosibirsk, Zhukovsky and astonishingly in Moscow.
 
 ```{r}
-# Add regression trend!!
-
 ggplot(sales, aes(x = date_block_num)) +
   geom_bar() +
-  geom_vline(xintercept = 12.5) +
-  geom_vline(xintercept = 24.5) +
-  annotate("text", x = 2, y = 150000, label = "2013") +
-  annotate("text", x = 14, y = 150000, label = "2014") +
-  annotate("text", x = 26, y = 150000, label = "2015") +
+  geom_vline(xintercept = 11.5) +
+  geom_vline(xintercept = 23.5) +
+  annotate("text", x = 1.5, y = 150000, label = "2013") +
+  annotate("text", x = 13.5, y = 150000, label = "2014") +
+  annotate("text", x = 25.5, y = 150000, label = "2015") +
   labs(title = "Unique sales by month") +
   xlab("Month") +
   ylab("Sales") +
   theme_light()
 ```
 
-The two months with the largest number of unique sales are December 2014 and 2015. There is a downward trend over the years.
+The two months with the largest number of unique sales are December 2014 and 2015. There is a downward trend over the months.
 
 ### Outliers
 
@@ -175,7 +183,7 @@ There are many outliers that need to be carefully analyzed and then correct or d
 **Prices of all products**
 
 ```{r}
-head(sales[order(-item_price), ], 10)
+head(sales[order(-item_price), ], 7)
 ```
 
 The first item sold for 307 980 rubles is a remote control software sold in one transaction to 522 people, which results in such a high price. The original value was divided by 522.
@@ -259,13 +267,13 @@ shopLabels = as.numeric(shopLoc)
 ```
 
 ```{r}
-print(shops$shop_name[c(1, 2, 58, 59)])
+shops[c(1, 2, 58, 59), 1]
 ```
 
 These two locations in Yakutsk probably mean the same stores, although they have different IDs.
 
 ```{r}
-print(shops$shop_name[c(11, 12)])
+shops[c(11, 12), 1]
 ```
 
 A similar situation is in Zhukovsky. Store names differ only by one character ("?" instead of "2").
