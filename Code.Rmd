@@ -272,7 +272,6 @@ sales[, month := as.factor(month(sales$date))]
 sales[, year := as.factor(year(sales$date))]
 ```
 
-
 2. Create a variable with the names of the places where the stores are located.
 
 ```{r}
@@ -300,19 +299,32 @@ itemCat[, (catNames) := tstrsplit(item_category_name, " - ",
 itemCat[is.na(subCategory), subCategory := mainCategory]
 ```
 
+4. Listing of national holidays and Sundays in Russia. 
+
+```{r}
+# Source: https://www.timeanddate.com/calendar/
+holidays = data.table(date_block_num = seq(0, 35), holidays = c(10, 5, 6, 4, 9, 6, 4, 4, 5, 4, 5, 5, 10, 5, 7, 4, 9, 8, 4, 5, 4, 4, 8, 4, 12, 5, 6, 4, 9, 5, 4, 5, 4, 4, 6, 4))
+```
+
+5. Avarage exchange rate of dollar to ruble
+
+```{r}
+# Source: https://www.x-rates.com/average/?from=USD&to=RUB&amount=1
+exchange = data.table(date_block_num = seq(0, 35), exchange = c(30.244, 30.180, 30.817, 31.347, 31.326, 32.309, 32.769, 32.992, 32.601, 32.077, 32.688, 32.868, 33.676, 35.245, 36.195, 35.659, 34.918, 34.392, 34.685, 36.144, 37.951, 40.815, 46.257, 55.967, 63.678, 64.443, 60.262, 53.179, 50.683, 54.611, 57.156, 65.355, 66.950, 63.126, 65.083, 69.897))
+```
+
 
 # Summary
 
 # TODO
+0. na pewno uzyc xgboost i ranger
 1. kiedy produkt pojawil sie na rynku (miesiac jako num block)
 2. ile czasu produkt byl na rynku (dni)
 3. ile razy przedmiot byl zwracany (albo czy byl w ogole zwracany)
-3. dodac sredni kurs miesieczny rubel-dolar
-4. dodac swieta panstwowe w rosji (https://www.timeanddate.com/calendar/)
-5. liczba dni targowych (http://fs.moex.com/files/3791/)
+4. obliczyc iloczyn sprzedanych przedmiotow i ich ceny
 6. pamietac zeby przyciac wartosci do zakresu 0-20 (wieksza niz 20 staja sie 20)
+// nie dodawac liczby dni w miesiecu ani dni gieldowych
 
-1. wyznaczyc kategorie przedmiotow na podstawie podobienstwa ich nazw (biblioteka "stringdist")
 
 1. ensemble modeling,
 2. lstm,
