@@ -38,13 +38,19 @@ The following files were provided:
     + **item_category_name** - name of item category,
 4. **shops.csv** - supplemental information about the shops:
     + **shop_id** - unique identifier of a shop,
-    + **shop_name** - name of shop.
+    + **shop_name** - name of shop,
+5. **test.csv** - the test set for which a sales forecast should be made for the shops and products in November 2015:
+    + **ID** - an ID that represents a (Shop, Item) tuple only in test set,
+    + **shop_id** - unique identifier of a shop,
+    + **item_id** - unique identifier of a product.
 
 ```{r include = FALSE}
 startTime = Sys.time()
 ```
 
-# Load libraries
+# Load libraries and data
+
+**Load libraries**
 
 ```{r message = FALSE}
 library("ggplot2")
@@ -52,13 +58,14 @@ library("cowplot")
 library("data.table")
 ```
 
-# Load data
+**Load data**
 
 ```{r message = FALSE}
 sales = fread("data/sales_train_v2.csv", showProgress = FALSE)
 items = fread("data/items.csv", encoding = "UTF-8")
 shops = fread("data/shops.csv", encoding = "UTF-8")
 itemCat = fread("data/item_categories.csv", encoding = "UTF-8")
+testset = fread("data/test.csv", encoding = "UTF-8")
 ```
 
 The **fread** function is used to read data, which is about 10 times faster than the standard **read.csv** function. In addition, it uses less memory and other functions are optimized for processing big data.
@@ -80,6 +87,7 @@ Merge items dataset with sales by **"item_id"** column.
 ```{r}
 factorCols = c("item_id", "shop_id", "item_category_id")
 sales[, (factorCols) := lapply(.SD, factor), .SDcols = factorCols]
+testset[, (factorCols[-3]) := lapply(.SD, factor), .SDcols = factorCols[-3]]
 ```
 
 Convert selected variables to factor data type.
@@ -125,20 +133,6 @@ Only 6 duplicates were found, but none appear to be incorrect. They relate to th
 ### Sales
 
 ```{r}
-shop_id_grouped = sales[, .N, by = .(shop_id)]
-
-ggplot(shop_id_grouped, aes(x = reorder(shop_id, N), y = N)) +
-  geom_col() +
-  labs(title = "Total sales by stores") +
-  xlab("Shop ID") +
-  ylab("Sales") +
-  coord_flip() +
-  theme_light()
-```
-
-Based on the chart, we can notice a strong unbalance in stores sales. The 5 stores with the largest total number of sales are located respectively in Moscow, Moscow, Khimki, Moscow and Saint Petersburg. However, the worst results are recorded in stores in Novosibirsk, Zhukovsky and astonishingly in Moscow.
-
-```{r}
 ggplot(sales, aes(x = date_block_num)) +
   geom_bar() +
   geom_vline(xintercept = 11.5) +
@@ -152,11 +146,11 @@ ggplot(sales, aes(x = date_block_num)) +
   theme_light()
 ```
 
-The two months with the largest number of unique sales are December 2014 and 2015. There is a downward trend over the months.
+The two months with the largest number of unique sales are December in 2014 and 2015 year. There is a downward trend over the months.
 
 ### Outliers
 
-```{r fig.height = 2, fig.width = 7}
+```{r fig.height = 2, fig.width = 8}
 p1 = ggplot(sales, aes(y = item_price)) +
   geom_boxplot() +
   scale_y_continuous(breaks = c(0, 100000, 200000, 300000),
@@ -263,6 +257,50 @@ A similar situation is in Zhukovsky. Store names differ only by one character ("
 
 ## Data mining
 
+This subsection focuses on a more detailed analysis that will be useful for creating significant predictors, which should improve the efficiency of the pedication model.
+
+```{r}
+shop_id_grouped = sales[, .N, by = .(shop_id)]
+
+ggplot(shop_id_grouped, aes(x = reorder(shop_id, N), y = N)) +
+  geom_col() +
+  labs(title = "Total sales by stores") +
+  xlab("Shop ID") +
+  ylab("Sales") +
+  coord_flip() +
+  theme_light()
+```
+
+Based on above chart, we can notice a strong unbalance in stores sales. The 5 stores with the largest total number of sales are located respectively in Moscow, Moscow, Khimki, Moscow and Saint Petersburg. However, the worst results are recorded in stores in Novosibirsk, Zhukovsky and astonishingly in Moscow.
+
+## Check test set
+
+In order to achieve the best results, it is necessary to analyze the data contained in the test set. This will allow to pay attention to the potential difference between the training and test set.
+
+```{r collapse = TRUE}
+checkShopSubset = unique(testset[, shop_id]) %in% unique(sales[, shop_id])
+
+paste0("Shops: ", length(levels(testset[, shop_id])))
+paste0("Are they a subset? ", all(checkShopSubset))
+```
+
+The test set contains 42 stores, which is 18 less than the training set. All test set stores appear in the training set.
+
+```{r collapse = TRUE}
+checkItemSubset = unique(testset[, item_id]) %in% unique(sales[, item_id])
+
+paste0("Items: ", length(levels(testset[, item_id])))
+paste0("Are they a subset? ", all(checkItemSubset))
+```
+
+The test set contains 5100 unique items, which is 16707 less than the training set. However, not all of them appeared in the training set.
+
+```{r}
+length(checkItemSubset[checkItemSubset == FALSE])
+```
+
+In November appeared 363 new items in stores.
+
 # Feature engineer
 
 1. Extract month and year from date to separate variables.
@@ -303,32 +341,51 @@ itemCat[is.na(subCategory), subCategory := mainCategory]
 
 ```{r}
 # Source: https://www.timeanddate.com/calendar/
-holidays = data.table(date_block_num = seq(0, 35), holidays = c(10, 5, 6, 4, 9, 6, 4, 4, 5, 4, 5, 5, 10, 5, 7, 4, 9, 8, 4, 5, 4, 4, 8, 4, 12, 5, 6, 4, 9, 5, 4, 5, 4, 4, 6, 4))
+holidays = data.table(date_block_num = seq(0, 35), 
+                      holidays = c(10, 5, 6, 4, 9, 6, 4, 4, 5, 4, 5, 5, 
+                                   10, 5, 7, 4, 9, 8, 4, 5, 4, 4, 8, 4, 
+                                   12, 5, 6, 4, 9, 5, 4, 5, 4, 4, 6, 4))
 ```
 
 5. Avarage exchange rate of dollar to ruble
 
 ```{r}
 # Source: https://www.x-rates.com/average/?from=USD&to=RUB&amount=1
-exchange = data.table(date_block_num = seq(0, 35), exchange = c(30.244, 30.180, 30.817, 31.347, 31.326, 32.309, 32.769, 32.992, 32.601, 32.077, 32.688, 32.868, 33.676, 35.245, 36.195, 35.659, 34.918, 34.392, 34.685, 36.144, 37.951, 40.815, 46.257, 55.967, 63.678, 64.443, 60.262, 53.179, 50.683, 54.611, 57.156, 65.355, 66.950, 63.126, 65.083, 69.897))
+exchange = data.table(date_block_num = seq(0, 35), 
+                      exchange = c(30.244, 30.180, 30.817, 31.347, 31.326, 32.309,
+                                   32.769, 32.992, 32.601, 32.077, 32.688, 32.868,
+                                   33.676, 35.245, 36.195, 35.659, 34.918, 34.392,
+                                   34.685, 36.144, 37.951, 40.815, 46.257, 55.967,
+                                   63.678, 64.443, 60.262, 53.179, 50.683, 54.611,
+                                   57.156, 65.355, 66.950, 63.126, 65.083, 69.897))
 ```
 
+# Data preparation
+
+```{r}
+testset[, date_block_num := 34]
+```
 
 # Summary
 
 # TODO
-0. na pewno uzyc xgboost i ranger
-1. kiedy produkt pojawil sie na rynku (miesiac jako num block)
-2. ile czasu produkt byl na rynku (dni)
-3. ile razy przedmiot byl zwracany (albo czy byl w ogole zwracany)
-4. obliczyc iloczyn sprzedanych przedmiotow i ich ceny
-6. pamietac zeby przyciac wartosci do zakresu 0-20 (wieksza niz 20 staja sie 20)
-// nie dodawac liczby dni w miesiecu ani dni gieldowych
 
+TODO:
+
+1. użyć xgboost lub ranger
+2. kiedy produkt pojawil sie na rynku (miesiac jako num block)
+3. ile czasu produkt byl na rynku (dni)
+4. ile razy przedmiot byl zwracany (albo czy byl w ogole zwracany)
+5. obliczyc iloczyn sprzedanych przedmiotow i ich ceny (ale co z tym zrobic, jesli nowe dane nie zawieraja ceny?)
+6. czy poprawic ID sklepow????
+7. pamietac zeby przyciac wartosci do zakresu 0-20 (wieksza niz 20 staja sie 20)
+8. *nie dodawac liczby dni w miesiecu ani dni gieldowych*
+
+Inne modele:
 
 1. ensemble modeling,
 2. lstm,
-3. hierarchical time series
+3. hierarchical time series.
 
 
 ---
