@@ -87,6 +87,7 @@ Merge items dataset with sales by **"item_id"** column.
 ```{r}
 factorCols = c("item_id", "shop_id", "item_category_id")
 sales[, (factorCols) := lapply(.SD, factor), .SDcols = factorCols]
+# Skip the third column
 testset[, (factorCols[-3]) := lapply(.SD, factor), .SDcols = factorCols[-3]]
 ```
 
@@ -255,6 +256,43 @@ shops[c(11, 12), 1]
 
 A similar situation is in Zhukovsky. Store names differ only by one character ("?" instead of "2").
 
+```{r collapse = TRUE}
+sort(unique(sales[shop_id == 0, date_block_num]))
+sort(unique(sales[shop_id == 57, date_block_num]))
+
+sort(unique(sales[shop_id == 1, date_block_num]))
+sort(unique(sales[shop_id == 58, date_block_num]))
+
+sort(unique(sales[shop_id == 10, date_block_num]))
+unique(sales[shop_id == 11, date_block_num])
+```
+
+Looking deeper into the data, it can be seen that the above stores contains missing months of sales from other stores, which confirms the hypothesis that they are the same stores. In this case, their ID was corrected in all datasets (in testset too).
+
+```{r}
+# First change ID, next drop unused factor
+sales[shop_id == 0, shop_id := factor(57)]
+sales[, shop_id := factor(shop_id)]
+shops[shop_id == 0, shop_id := factor(57)]
+shops[, shop_id := factor(shop_id)]
+testset[shop_id == 0, shop_id := factor(57)]
+testset[, shop_id := factor(shop_id)]
+
+sales[shop_id == 1, shop_id := factor(58)]
+sales[, shop_id := factor(shop_id)]
+shops[shop_id == 1, shop_id := factor(58)]
+shops[, shop_id := factor(shop_id)]
+testset[shop_id == 1, shop_id := factor(58)]
+testset[, shop_id := factor(shop_id)]
+
+sales[shop_id == 11, shop_id := factor(10)]
+sales[, shop_id := factor(shop_id)]
+shops[shop_id == 11, shop_id := factor(10)]
+shops[, shop_id := factor(shop_id)]
+testset[shop_id == 11, shop_id := factor(10)]
+testset[, shop_id := factor(shop_id)]
+```
+
 ## Data mining
 
 This subsection focuses on a more detailed analysis that will be useful for creating significant predictors, which should improve the efficiency of the pedication model.
@@ -264,14 +302,14 @@ shop_id_grouped = sales[, .N, by = .(shop_id)]
 
 ggplot(shop_id_grouped, aes(x = reorder(shop_id, N), y = N)) +
   geom_col() +
-  labs(title = "Total sales by stores") +
+  labs(title = "Total sales by stores", caption = "3 stores have been merged") +
   xlab("Shop ID") +
   ylab("Sales") +
   coord_flip() +
   theme_light()
 ```
 
-Based on above chart, we can notice a strong unbalance in stores sales. The 5 stores with the largest total number of sales are located respectively in Moscow, Moscow, Khimki, Moscow and Saint Petersburg. However, the worst results are recorded in stores in Novosibirsk, Zhukovsky and astonishingly in Moscow.
+Based on above chart, we can notice a strong unbalance in stores sales. The 5 stores with the largest total number of sales are located respectively in Moscow, Moscow, Khimki, Moscow and Yakutsk. However, the worst results are recorded in stores in Novosibirsk, astonishingly in Moscow and Voronezh.
 
 ## Check test set
 
@@ -313,28 +351,29 @@ sales[, year := as.factor(year(sales$date))]
 2. Create a variable with the names of the places where the stores are located.
 
 ```{r}
-shopLoc = c("Yakutsk", "Yakutsk", "Adygea", "Balashikha", "Volzhsky", "Vologda",
-            "Voronezh", "Voronezh", "Voronezh", "Outbound trade", "Zhukovsky",
-            "Zhukovsky", "Online store private", "Kazan", "Kazan", "Kaluga", "Kolomna",
-            "Krasnoyarsk", "Krasnoyarsk", "Kursk", "Moscow", "Moscow", "Moscow",
-            "Moscow", "Moscow", "Moscow", "Moscow", "Moscow", "Moscow",
-            "Moscow", "Moscow", "Moscow", "Moscow", "Mytishchi", "Nizhny Novgorod",
-            "Nizhny Novgorod", "Novosibirsk", "Novosibirsk", "Omsk", "Rostov-on-Don",
-            "Rostov-on-Don", "Rostov-on-Don", "Saint Petersburg", "Saint Petersburg",
-            "Samara", "Samara", "Sergiyev Posad", "Surgut", "Tomsk", "Tyumen",
-            "Tyumen", "Tyumen", "Ufa", "Ufa", "Khimki", "Online store 1C", 
-            "Chekhov", "Yakutsk", "Yakutsk", "Yaroslavl")
+shopLoc = c(rep("Yakutsk", 2), "Adygea", "Balashikha", "Volzhsky", "Vologda",
+            rep("Voronezh", 3), "Outbound trade", rep("Zhukovsky", 2), 
+            "Online store private", "Kazan", "Kazan", "Kaluga", "Kolomna", 
+            rep("Krasnoyarsk", 2), "Kursk", rep("Moscow", 13), "Mytishchi", 
+            rep("Nizhny Novgorod", 2), rep("Novosibirsk", 2), "Omsk", 
+            rep("Rostov-on-Don", 3), rep("Saint Petersburg", 2), rep("Samara", 2), 
+            "Sergiyev Posad", "Surgut", "Tomsk", rep("Tyumen", 3), "Ufa", "Ufa", 
+            "Khimki", "Online store 1C", "Chekhov", rep("Yakutsk", 2), "Yaroslavl")
 shopLoc = factor(shopLoc)
 shopLabels = as.numeric(shopLoc)
 ```
 
 3. Extract the main and secondary category names from the category description.
 
-```{r}
+```{r collapse = TRUE}
+# This is not the same as the column "item_category_id"
 catNames = c("mainCategory", "subCategory")
 itemCat[, (catNames) := tstrsplit(item_category_name, " - ", 
                                   type.convert = TRUE, fixed = TRUE)]
 itemCat[is.na(subCategory), subCategory := mainCategory]
+
+paste0("Main category: ", length(unique(itemCat[, mainCategory])))
+paste0("Subcategory: ", length(unique(itemCat[, subCategory])))
 ```
 
 4. Listing of national holidays and Sundays in Russia. 
@@ -376,10 +415,13 @@ TODO:
 2. kiedy produkt pojawil sie na rynku (miesiac jako num block)
 3. ile czasu produkt byl na rynku (dni)
 4. ile razy przedmiot byl zwracany (albo czy byl w ogole zwracany)
+5. ile razy produkt zostal sprzedany w poprzednim miesiacu 
 5. obliczyc iloczyn sprzedanych przedmiotow i ich ceny (ale co z tym zrobic, jesli nowe dane nie zawieraja ceny?)
-6. czy poprawic ID sklepow????
-7. pamietac zeby przyciac wartosci do zakresu 0-20 (wieksza niz 20 staja sie 20)
-8. *nie dodawac liczby dni w miesiecu ani dni gieldowych*
+8. dodac zmienna logiczna:
+a) czy produkt byl w trainset
+b) czy tuplet (sklep, produkt) byl w trainset
+8. pamietac zeby przyciac wartosci do zakresu 0-20 (wieksza niz 20 staja sie 20)
+9. *nie dodawac liczby dni w miesiecu ani dni gieldowych*
 
 Inne modele:
 
