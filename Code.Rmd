@@ -9,6 +9,7 @@ output:
     highlight: tango
     theme: spacelab
     df_print: kable
+    fig_width: 8
 ---
 
 <style>
@@ -65,7 +66,7 @@ sales = fread("data/sales_train_v2.csv", showProgress = FALSE)
 items = fread("data/items.csv", encoding = "UTF-8")
 shops = fread("data/shops.csv", encoding = "UTF-8")
 itemCat = fread("data/item_categories.csv", encoding = "UTF-8")
-testset = fread("data/test.csv", encoding = "UTF-8")
+testset = fread("data/test.csv")
 ```
 
 The **fread** function is used to read data, which is about 10 times faster than the standard **read.csv** function. In addition, it uses less memory and other functions are optimized for processing big data.
@@ -133,7 +134,7 @@ Only 6 duplicates were found, but none appear to be incorrect. They relate to th
 
 ### Sales
 
-```{r}
+```{r fig.height = 4}
 ggplot(sales, aes(x = date_block_num)) +
   geom_bar() +
   geom_vline(xintercept = 11.5) +
@@ -151,7 +152,7 @@ The two months with the largest number of unique sales are December in 2014 and 
 
 ### Outliers
 
-```{r fig.height = 2, fig.width = 8}
+```{r fig.height = 2}
 p1 = ggplot(sales, aes(y = item_price)) +
   geom_boxplot() +
   scale_y_continuous(breaks = c(0, 100000, 200000, 300000),
@@ -218,7 +219,7 @@ head(sales[order(-item_cnt_day), ], 5)
 
 The largest number of transactions concerns the delivery service to the destination point. However, it is also probably incorrect. The cost of the service is significantly underestimated compared to others. This is well illustrated in the figure below.
 
-```{r fig.height = 3, fig.width = 6}
+```{r fig.height = 3}
 cnt_df = data.frame(price = sales[item_id == 11373, item_price],
                     amount = sales[item_id == 11373, item_cnt_day])
 
@@ -267,28 +268,23 @@ sort(unique(sales[shop_id == 10, date_block_num]))
 unique(sales[shop_id == 11, date_block_num])
 ```
 
-Looking deeper into the data, it can be seen that the above stores contains missing months of sales from other stores, which confirms the hypothesis that they are the same stores. In this case, their ID was corrected in all datasets (in testset too).
+Looking deeper into the data, it can be seen that the above stores contains missing months of sales from other stores, which confirms the hypothesis that they are the same stores. In this case, their ID was corrected in training and test set.
 
 ```{r}
 # First change ID, next drop unused factor
+# Note that "shops" datatable has not been corrected
 sales[shop_id == 0, shop_id := factor(57)]
 sales[, shop_id := factor(shop_id)]
-shops[shop_id == 0, shop_id := factor(57)]
-shops[, shop_id := factor(shop_id)]
 testset[shop_id == 0, shop_id := factor(57)]
 testset[, shop_id := factor(shop_id)]
 
 sales[shop_id == 1, shop_id := factor(58)]
 sales[, shop_id := factor(shop_id)]
-shops[shop_id == 1, shop_id := factor(58)]
-shops[, shop_id := factor(shop_id)]
 testset[shop_id == 1, shop_id := factor(58)]
 testset[, shop_id := factor(shop_id)]
 
 sales[shop_id == 11, shop_id := factor(10)]
 sales[, shop_id := factor(shop_id)]
-shops[shop_id == 11, shop_id := factor(10)]
-shops[, shop_id := factor(shop_id)]
 testset[shop_id == 11, shop_id := factor(10)]
 testset[, shop_id := factor(shop_id)]
 ```
@@ -297,7 +293,9 @@ testset[, shop_id := factor(shop_id)]
 
 This subsection focuses on a more detailed analysis that will be useful for creating significant predictors, which should improve the efficiency of the pedication model.
 
-```{r}
+### Total sales by stores
+
+```{r fig.height = 7}
 shop_id_grouped = sales[, .N, by = .(shop_id)]
 
 ggplot(shop_id_grouped, aes(x = reorder(shop_id, N), y = N)) +
@@ -314,6 +312,12 @@ Based on above chart, we can notice a strong unbalance in stores sales. The 5 st
 ## Check test set
 
 In order to achieve the best results, it is necessary to analyze the data contained in the test set. This will allow to pay attention to the potential difference between the training and test set.
+
+```{r}
+dim(testset)
+```
+
+The test set consists of **214 200** rows and **3** columns.
 
 ```{r collapse = TRUE}
 checkShopSubset = unique(testset[, shop_id]) %in% unique(sales[, shop_id])
@@ -337,7 +341,25 @@ The test set contains 5100 unique items, which is 16707 less than the training s
 length(checkItemSubset[checkItemSubset == FALSE])
 ```
 
-In November appeared 363 new items in stores.
+In November appeared 363 completely new items in stores.
+
+```{r collapse = TRUE}
+# Create character vector with unique combination of items and shops
+# in training and test sets
+pairShopItemTrain = paste(sales[, shop_id], sales[, item_id])
+pairShopItemTrain = pairShopItemTrain[!duplicated(pairShopItemTrain)]
+pairShopItemTest = paste(testset[, shop_id], sales[, item_id])
+pairShopItemTest = pairShopItemTest[!duplicated(pairShopItemTest)]
+
+# Check which pairs repeat in both sets
+subsetShopItem = pairShopItemTest %in% pairShopItemTrain
+
+paste0("Number of unique shop-item pairs: ", length(subsetShopItem))
+paste0("Number of repeated pairs: ", sum(subsetShopItem))
+paste0("Number of new pairs: ", length(subsetShopItem[subsetShopItem == FALSE]))
+```
+
+In addition to the appearance of completely new items, there is also the situation of selling new and old items in stores where they were not sold before. Out of 22 380 possible unique store-item combinations, there are 13 770 new items for sale in some shops. This means that we do not know what the sale of the item in these stores looked like before.
 
 # Feature engineer
 
@@ -403,6 +425,7 @@ exchange = data.table(date_block_num = seq(0, 35),
 
 ```{r}
 testset[, date_block_num := 34]
+# rbindlist()
 ```
 
 # Summary
@@ -417,6 +440,7 @@ TODO:
 4. ile razy przedmiot byl zwracany (albo czy byl w ogole zwracany)
 5. ile razy produkt zostal sprzedany w poprzednim miesiacu 
 5. obliczyc iloczyn sprzedanych przedmiotow i ich ceny (ale co z tym zrobic, jesli nowe dane nie zawieraja ceny?)
+- np. obliczyc mediane cen kategorii produktow i potem to jakos sklasyfikowac (np. cena niska, cena srednia, cena wysoka)
 8. dodac zmienna logiczna:
 a) czy produkt byl w trainset
 b) czy tuplet (sklep, produkt) byl w trainset
