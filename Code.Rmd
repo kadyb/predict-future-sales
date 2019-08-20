@@ -153,7 +153,18 @@ The two months with the largest number of unique sales are December in 2014 and 
 ### Outliers
 
 ```{r fig.height = 2}
-p1 = ggplot(sales, aes(y = item_price)) +
+# Delete duplicated values, the distribution will be a little inaccurate, 
+# but the execution time will decrease almost 30 times
+salesPrice = sales[, .(item_price)]
+salesPrice = salesPrice[!duplicated(salesPrice)]
+
+salesItem = sales[, .(item_cnt_day)]
+salesItemUnq = salesItem[!duplicated(item_cnt_day)]
+set.seed(1)
+salesItemDupl = salesItem[duplicated(salesItem)][sample(.N, 4000)]
+salesItem = rbindlist(list(salesItemUnq, salesItemDupl))
+
+p1 = ggplot(salesPrice, aes(y = item_price)) +
   geom_boxplot() +
   scale_y_continuous(breaks = c(0, 100000, 200000, 300000),
                      labels = c("0", "100000", "200000", "300000")) +
@@ -165,7 +176,7 @@ p1 = ggplot(sales, aes(y = item_price)) +
         axis.text.y = element_blank(),
         axis.ticks.y = element_blank())
 
-p2 = ggplot(sales, aes(y = item_cnt_day)) +
+p2 = ggplot(salesItem, aes(y = item_cnt_day)) +
   geom_boxplot() +
   scale_y_continuous(breaks = c(0, 500, 1000, 1500, 2000),
                      labels = c("0", "500", "1000", "1500", "2000")) +
