@@ -304,6 +304,31 @@ testset[, shop_id := factor(shop_id)]
 
 This subsection focuses on a more detailed analysis that will be useful for creating significant predictors, which should improve the efficiency of the pedication model.
 
+### Number of items in categories
+
+```{r}
+catCounts = sales[, .(.N), by = .(item_category_id)][order(-N)]
+
+ggplot(catCounts, aes(N)) +
+  geom_histogram(bins = 50) +
+  geom_vline(xintercept = mean(catCounts[, N]), linetype = "dashed") +
+  geom_vline(xintercept = median(catCounts[, N])) +
+  scale_x_continuous(breaks = c(0, 200000, 400000),
+                     labels = c("0", "200000", "400000")) +
+  labs(title = "Number of items in categories", 
+       caption = "The solid line represents the median
+       The dashed line represents the average") +
+  xlab("Items") +
+  ylab("Frequency") +
+  theme_light()
+```
+
+Category ID 40 (cinema) contains over 550 000 items, while 12 categories contain less than 20 items. The median for all categories is nearly 7 000 items and the average is around 35 000.
+
+```{r}
+catCounts[c(1:5, 80:84)]
+```
+
 ### Total sales by stores
 
 ```{r fig.height = 7}
@@ -319,6 +344,58 @@ ggplot(shop_id_grouped, aes(x = reorder(shop_id, N), y = N)) +
 ```
 
 Based on above chart, we can notice a strong unbalance in stores sales. The 5 stores with the largest total number of sales are located respectively in Moscow, Moscow, Khimki, Moscow and Yakutsk. However, the worst results are recorded in stores in Novosibirsk, astonishingly in Moscow and Voronezh.
+
+### Most sold items
+
+```{r}
+itemSumSales = sales[, .(sum = sum(item_cnt_day)), by = .(item_id)][order(-sum)]
+itemSumSales = itemSumSales[1:50]
+
+ggplot(itemSumSales[1:20], aes(x = reorder(item_id, sum), y = sum)) +
+  geom_col() +
+  labs(title = "Most sold items") +
+  xlab("Item ID") +
+  ylab("Sales") +
+  coord_flip() +
+  theme_light()
+```
+
+The first most sold item was sold almost 11 times more often than the second item in the ranking. Let's check what this item is.
+
+```{r}
+sales[item_id == 20949, item_name][1]
+```
+
+It is a plastic bag.
+
+```{r}
+sales[item_id == 2808, item_name][1]
+```
+
+The second most sold item is a computer game.
+
+### Price of items by categories
+
+```{r fig.height = 6}
+salesMeanSd = sales[, .(avg = mean(item_price), sd = sd(item_price)), 
+                    by = .(item_category_id)]
+salesMeanSd[is.na(sd), sd := 0]
+salesMeanSd = salesMeanSd[order(-avg)]
+
+ggplot(salesMeanSd[1:30], aes(x = reorder(item_category_id, avg), y = avg)) +
+  geom_col() +
+  geom_errorbar(aes(ymin = avg, ymax = avg + sd, color = "red"),
+                show.legend = FALSE) +
+  labs(title = "Price of items by categories", 
+       caption = "The red line represents the standard deviation
+       Only top 30 categories out of 84 are included") +
+  xlab("Item category ID") +
+  ylab("Average price") +
+  coord_flip() +
+  theme_light()
+```
+
+The highest average price is for the game consoles category, while the lowest is for the gift category. Most prices in categories are characterized by a large spread, the largest standard deviation can be noted for the game consoles category.
 
 ## Check test set
 
@@ -457,6 +534,10 @@ a) czy produkt byl w trainset
 b) czy tuplet (sklep, produkt) byl w trainset
 8. pamietac zeby przyciac wartosci do zakresu 0-20 (wieksza niz 20 staja sie 20)
 9. *nie dodawac liczby dni w miesiecu ani dni gieldowych*
+
+Co można jeszcze zrobić:
+
+1. Unifikacja nazw przedmiotów (np. poprzez usunięcie zbędnych znaków czy wybranie dwóch pierwszych wyrazów) i wygenerowanie nowych ID. Wyszukanie podobieństw między nazwami (biblioteka "stringdist").
 
 Inne modele:
 
