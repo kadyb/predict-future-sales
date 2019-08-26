@@ -304,38 +304,40 @@ testset[, shop_id := factor(shop_id)]
 
 This subsection focuses on a more detailed analysis that will be useful for creating significant predictors, which should improve the efficiency of the pedication model.
 
-### Number of items in categories
+### Unique items in categories
 
 ```{r}
+# TRZEBA TO POPRAWIC NA WYSPAIENIA UNIKALNE, A NIE WSZYSTKIE!!!
+# opis tez do poprawy
 catCounts = sales[, .(.N), by = .(item_category_id)][order(-N)]
 
 ggplot(catCounts, aes(N)) +
   geom_histogram(bins = 50) +
-  geom_vline(xintercept = mean(catCounts[, N]), linetype = "dashed") +
-  geom_vline(xintercept = median(catCounts[, N])) +
+  geom_vline(xintercept = median(catCounts[, N]), linetype = "dashed") +
   scale_x_continuous(breaks = c(0, 200000, 400000),
                      labels = c("0", "200000", "400000")) +
-  labs(title = "Number of items in categories", 
-       caption = "The solid line represents the median
-       The dashed line represents the average") +
+  labs(title = "Unique items in categories", 
+       caption = "The dashed line represents the median") +
   xlab("Items") +
   ylab("Frequency") +
   theme_light()
 ```
 
-Category ID 40 (cinema) contains over 550 000 items, while 12 categories contain less than 20 items. The median for all categories is nearly 7 000 items and the average is around 35 000.
+Category **cinema** (i.e. ID 40) contains over 550 000 items (note that they are not unique), while 12 categories contain less than 20 items. The median for all categories is nearly 7 000 items and the average is around 35 000 items.
 
 ```{r}
-catCounts[c(1:5, 80:84)]
+catCounts[c(1:4, 81:84)]
 ```
 
 ### Total sales by stores
 
 ```{r fig.height = 7}
-shop_id_grouped = sales[, .N, by = .(shop_id)]
+salesByShop = sales[, .(sum = sum(item_cnt_day)), by = .(shop_id)]
 
-ggplot(shop_id_grouped, aes(x = reorder(shop_id, N), y = N)) +
+ggplot(salesByShop, aes(x = reorder(shop_id, sum), y = sum)) +
   geom_col() +
+  scale_y_continuous(breaks = c(0, 100000, 200000, 300000),
+                     labels = c("0", "100000", "200000", "300000")) +
   labs(title = "Total sales by stores", caption = "3 stores have been merged") +
   xlab("Shop ID") +
   ylab("Sales") +
@@ -343,7 +345,26 @@ ggplot(shop_id_grouped, aes(x = reorder(shop_id, N), y = N)) +
   theme_light()
 ```
 
-Based on above chart, we can notice a strong unbalance in stores sales. The 5 stores with the largest total number of sales are located respectively in Moscow, Moscow, Khimki, Moscow and Yakutsk. However, the worst results are recorded in stores in Novosibirsk, astonishingly in Moscow and Voronezh.
+Based on above chart, we can notice a strong unbalance in stores sales. The 5 stores with the largest total number of sales are located respectively in Moscow, Moscow, Khimki, Moscow and Yakutsk. However, the worst results are recorded in stores in Novosibirsk (360), Voronezh (3595) and Rostov on Don (4943).
+
+### Total sales by categories
+
+```{r}
+salesByItemCat = sales[, .(sum = sum(item_cnt_day)), by = .(item_category_id)]
+
+ggplot(salesByItemCat[1:30], aes(x = reorder(item_category_id, sum), y = sum)) +
+  geom_col() +
+  scale_y_continuous(breaks = c(0, 200000, 400000),
+                     labels = c("0", "200000", "400000")) +
+  labs(title = "Total sales by categories",
+       caption = "Only top 30 categories out of 84 are included") +
+  xlab("Category") +
+  ylab("Sales") +
+  coord_flip() +
+  theme_light()
+```
+
+Most items are sold in the **cinema** category, at the same time it is the most numerous category. The next two categories are **computer games** and **music**.
 
 ### Most sold items
 
@@ -363,12 +384,14 @@ ggplot(itemSumSales[1:20], aes(x = reorder(item_id, sum), y = sum)) +
 The first most sold item was sold almost 11 times more often than the second item in the ranking. Let's check what this item is.
 
 ```{r}
+# kodowanie znakow nie dziala
 sales[item_id == 20949, item_name][1]
 ```
 
 It is a plastic bag.
 
 ```{r}
+# kodowanie znakow nie dziala
 sales[item_id == 2808, item_name][1]
 ```
 
@@ -454,8 +477,8 @@ In addition to the appearance of completely new items, there is also the situati
 1. Extract month and year from date to separate variables.
 
 ```{r}
-sales[, month := as.factor(month(sales$date))]
-sales[, year := as.factor(year(sales$date))]
+sales[, month := month(sales$date)]
+sales[, year := year(sales$date)]
 ```
 
 2. Create a variable with the names of the places where the stores are located.
@@ -515,6 +538,8 @@ exchange = data.table(date_block_num = seq(0, 35),
 testset[, date_block_num := 34]
 # rbindlist()
 ```
+
+# Machine learning
 
 # Summary
 
