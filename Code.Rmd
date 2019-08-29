@@ -135,8 +135,10 @@ Only 6 duplicates were found, but none appear to be incorrect. They relate to th
 ### Sales
 
 ```{r fig.height = 4}
-ggplot(sales, aes(x = date_block_num)) +
-  geom_bar() +
+salesMonth = sales[, .(.N), by = .(date_block_num)]
+
+ggplot(salesMonth, aes(x = date_block_num, y = N)) +
+  geom_col() +
   geom_vline(xintercept = 11.5) +
   geom_vline(xintercept = 23.5) +
   annotate("text", x = 1.5, y = 150000, label = "2013") +
@@ -158,6 +160,7 @@ The two months with the largest number of unique sales are December in 2014 and 
 salesPrice = sales[, .(item_price)]
 salesPrice = salesPrice[!duplicated(salesPrice)]
 
+# Add random duplicate values to make the distribution more close to real
 salesItem = sales[, .(item_cnt_day)]
 salesItemUnq = salesItem[!duplicated(item_cnt_day)]
 set.seed(1)
@@ -300,30 +303,29 @@ testset[shop_id == 11, shop_id := factor(10)]
 testset[, shop_id := factor(shop_id)]
 ```
 
-## Data mining
+## Data mining {.tabset .tabset-fade}
 
 This subsection focuses on a more detailed analysis that will be useful for creating significant predictors, which should improve the efficiency of the pedication model.
 
 ### Unique items in categories
 
 ```{r}
-# TRZEBA TO POPRAWIC NA WYSPAIENIA UNIKALNE, A NIE WSZYSTKIE!!!
-# opis tez do poprawy
-catCounts = sales[, .(.N), by = .(item_category_id)][order(-N)]
+catCounts = sales[, .(count = uniqueN(item_id)), by = .(item_category_id)]
+catCounts = catCounts[order(-count)]
 
-ggplot(catCounts, aes(N)) +
-  geom_histogram(bins = 50) +
-  geom_vline(xintercept = median(catCounts[, N]), linetype = "dashed") +
-  scale_x_continuous(breaks = c(0, 200000, 400000),
-                     labels = c("0", "200000", "400000")) +
+ggplot(catCounts, aes(count)) +
+  geom_histogram(bins = 100) +
+  geom_vline(xintercept = mean(catCounts[, count]), linetype = "solid") +
+  geom_vline(xintercept = median(catCounts[, count]), linetype = "dashed") +
   labs(title = "Unique items in categories", 
-       caption = "The dashed line represents the median") +
+       caption = "The solid line represents the mean
+       The dashed line represents the median") +
   xlab("Items") +
   ylab("Frequency") +
   theme_light()
 ```
 
-Category **cinema** (i.e. ID 40) contains over 550 000 items (note that they are not unique), while 12 categories contain less than 20 items. The median for all categories is nearly 7 000 items and the average is around 35 000 items.
+Category **cinema** (i.e. ID 40) contains over 4 964 unique items, while 10 categories contain less than 5 items. The median for all categories is 42 unique items and the average is around 260 unique items.
 
 ```{r}
 catCounts[c(1:4, 81:84)]
@@ -350,6 +352,7 @@ Based on above chart, we can notice a strong unbalance in stores sales. The 5 st
 ### Total sales by categories
 
 ```{r}
+# sprawdzic czy sie opis zgadza po poprawieniu 'unique items in categories'
 salesByItemCat = sales[, .(sum = sum(item_cnt_day)), by = .(item_category_id)]
 
 ggplot(salesByItemCat[1:30], aes(x = reorder(item_category_id, sum), y = sum)) +
@@ -358,7 +361,7 @@ ggplot(salesByItemCat[1:30], aes(x = reorder(item_category_id, sum), y = sum)) +
                      labels = c("0", "200000", "400000")) +
   labs(title = "Total sales by categories",
        caption = "Only top 30 categories out of 84 are included") +
-  xlab("Category") +
+  xlab("Item category ID") +
   ylab("Sales") +
   coord_flip() +
   theme_light()
@@ -384,15 +387,13 @@ ggplot(itemSumSales[1:20], aes(x = reorder(item_id, sum), y = sum)) +
 The first most sold item was sold almost 11 times more often than the second item in the ranking. Let's check what this item is.
 
 ```{r}
-# kodowanie znakow nie dziala
-sales[item_id == 20949, item_name][1]
+head(sales[item_id == 20949, 7], 1)
 ```
 
 It is a plastic bag.
 
 ```{r}
-# kodowanie znakow nie dziala
-sales[item_id == 2808, item_name][1]
+head(sales[item_id == 2808, 7], 1)
 ```
 
 The second most sold item is a computer game.
@@ -418,7 +419,7 @@ ggplot(salesMeanSd[1:30], aes(x = reorder(item_category_id, avg), y = avg)) +
   theme_light()
 ```
 
-The highest average price is for the game consoles category, while the lowest is for the gift category. Most prices in categories are characterized by a large spread, the largest standard deviation can be noted for the game consoles category.
+The highest average price is for the **game consoles** category, while the lowest is for the **gift** category. Most prices in categories are characterized by a large spread, the largest standard deviation can be noted for the **game consoles** category.
 
 ## Check test set
 
@@ -557,8 +558,9 @@ TODO:
 8. dodac zmienna logiczna:
 a) czy produkt byl w trainset
 b) czy tuplet (sklep, produkt) byl w trainset
-8. pamietac zeby przyciac wartosci do zakresu 0-20 (wieksza niz 20 staja sie 20)
-9. *nie dodawac liczby dni w miesiecu ani dni gieldowych*
+9. pewnie bedzie trzeba dodac dane z testsetu do trainsetu i ustawic ich wartosci na 0
+10. pamietac zeby przyciac wartosci do zakresu 0-20 (wieksza niz 20 staja sie 20)
+11. *nie dodawac liczby dni w miesiecu ani dni gieldowych*
 
 Co można jeszcze zrobić:
 
