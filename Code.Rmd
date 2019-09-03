@@ -59,6 +59,11 @@ library("cowplot")
 library("data.table")
 ```
 
+```{r}
+# Save session info
+writeLines(capture.output(sessionInfo()), "sessionInfo.txt")
+```
+
 **Load data**
 
 ```{r message = FALSE}
