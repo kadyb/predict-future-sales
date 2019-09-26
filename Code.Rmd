@@ -479,6 +479,10 @@ paste0("Number of new pairs: ", length(subsetShopItem[subsetShopItem == FALSE]))
 
 In addition to the appearance of completely new items, there is also the situation of selling new and old items in stores where they were not sold before. Out of 22 380 possible unique store-item combinations, there are 13 770 new items for sale in some shops. This means that we do not know what the sale of the item in these stores looked like before.
 
+```{r include = FALSE}
+endTime = Sys.time()
+```
+
 # Feature engineer
 
 1. Extract month and year from date to separate variables.
@@ -582,5 +586,7 @@ Inne modele:
 ---
 
 <center> <font size = "2"> <i>
-The code was executed in `r round(difftime(Sys.time(), startTime, units = "mins"))` min.
+Visualizations were made in `r round(difftime(endTime, startTime, units = "secs"))` s.
+
+Data processing and machine learning were done in `r round(difftime(Sys.time(), endTime, units = "mins"))` min.
 <center> </font> </i>
