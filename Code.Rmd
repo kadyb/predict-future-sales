@@ -149,7 +149,8 @@ ggplot(salesMonth, aes(x = date_block_num, y = N)) +
   annotate("text", x = 1.5, y = 150000, label = "2013") +
   annotate("text", x = 13.5, y = 150000, label = "2014") +
   annotate("text", x = 25.5, y = 150000, label = "2015") +
-  labs(title = "Unique sales by month") +
+  labs(title = "Unique sales by month",
+       caption = "Labels on the X axis start from January 2013") +
   xlab("Month") +
   ylab("Sales") +
   theme_light()
