@@ -358,7 +358,6 @@ Based on above chart, we can notice a strong unbalance in stores sales. The 5 st
 ### Total sales by categories
 
 ```{r}
-# sprawdzic czy sie opis zgadza po poprawieniu 'unique items in categories'
 salesByItemCat = sales[, .(sum = sum(item_cnt_day)), by = .(item_category_id)]
 
 ggplot(salesByItemCat[1:30], aes(x = reorder(item_category_id, sum), y = sum)) +
@@ -373,7 +372,7 @@ ggplot(salesByItemCat[1:30], aes(x = reorder(item_category_id, sum), y = sum)) +
   theme_light()
 ```
 
-Most items are sold in the **cinema** category, at the same time it is the most numerous category. The next two categories are **computer games** and **music**.
+Most items are sold in the **cinema** category, at the same time it is the most numerous category. The next two categories with the highest sales are **computer games** and **music**.
 
 ### Most sold items
 
