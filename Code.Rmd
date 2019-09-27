@@ -383,7 +383,7 @@ itemSumSales = itemSumSales[1:50]
 
 ggplot(itemSumSales[1:20], aes(x = reorder(item_id, sum), y = sum)) +
   geom_col() +
-  labs(title = "Most sold items") +
+  labs(title = "Top 20 most sold items") +
   xlab("Item ID") +
   ylab("Sales") +
   coord_flip() +
