@@ -204,7 +204,7 @@ plot_grid(p1, p2)
 
 There are many outliers that need to be carefully analyzed and then correct or delete them.
 
-**Prices of all products**
+#### **Prices of all products**
 
 ```{r}
 head(sales[order(-item_price), ], 6)
@@ -231,7 +231,7 @@ One negative value appears, which is probably also an error. The median value of
 sales = sales[!(item_id == 2973 & item_price == -1)]
 ```
 
-**Daily sold products**
+#### **Daily sold products**
 
 ```{r}
 head(sales[order(-item_cnt_day), ], 5)
