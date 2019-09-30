@@ -426,6 +426,87 @@ ggplot(salesMeanSd[1:30], aes(x = reorder(item_category_id, avg), y = avg)) +
 
 The highest average price is for the **game consoles** category, while the lowest is for the **gift** category. Most prices in categories are characterized by a large spread, the largest standard deviation can be noted for the **game consoles** category.
 
+### Data relations
+```{r}
+# catCounts - number of unique items in categories
+# salesByItemCat - sum of sold items by categories
+# salesMeanSd[, -3] - avarage price of sold items by categories
+
+dataRelationsCat = Reduce(merge, list(catCounts, salesByItemCat, salesMeanSd[, -3]))
+
+p1 = ggplot(dataRelationsCat, aes(log(count), log(sum))) +
+  geom_point() +
+  geom_smooth(method = lm) +
+  xlab("Number of unique items [log]") +
+  ylab("Sum of sold items [log]") +
+  theme_light()
+  
+p2 = ggplot(dataRelationsCat, aes(log(count), log(avg))) +
+  geom_point() +
+  xlab("Number of unique items [log]") +
+  ylab("Avarage price of sold items [log]") +
+  theme_light()
+
+p3 = ggplot(dataRelationsCat, aes(log(avg), log(sum))) +
+  geom_point() +
+  xlab("Avarage price of sold items [log]") +
+  ylab("Sum of sold items [log]") +
+  theme_light()
+
+pg = plot_grid(p1, p2, p3, ncol = 3)
+title = ggdraw() + draw_label("Data aggregated by categories")
+plot_grid(title, pg, ncol = 1, rel_heights = c(0.1, 1))
+```
+
+You can notice the relationship between variables of total items sales and the number of unique items offered in the categories. There were no statistically significant relationships for other variables.
+
+```{r}
+cor.test(dataRelationsCat[, count], dataRelationsCat[, sum], 
+         method = "kendall")$estimate
+```
+
+The value of rank relationship for this case is about 0.55.
+
+```{r}
+catCountsShop = sales[, .(count = uniqueN(item_id)), by = .(shop_id)]
+# salesByShop - sum of sold items by shops
+salesMeanShop = sales[, .(avg = mean(item_price)), by = .(shop_id)]
+
+dataRelationsShop = Reduce(merge, list(catCountsShop, salesByShop, salesMeanShop))
+
+p1 = ggplot(dataRelationsShop, aes(count, sqrt(sum))) +
+  geom_point() +
+  geom_smooth(method = lm) +
+  xlab("Number of unique items [n]") +
+  ylab("Sum of sold items [sqrt]") +
+  theme_light()
+  
+p2 = ggplot(dataRelationsShop, aes(count, avg)) +
+  geom_point() +
+  xlab("Number of unique items [n]") +
+  ylab("Avarage price of sold items [n]") +
+  theme_light()
+
+p3 = ggplot(dataRelationsShop, aes(avg, sqrt(sum))) +
+  geom_point() +
+  xlab("Avarage price of sold items [n]") +
+  ylab("Sum of sold items [sqrt]") +
+  theme_light()
+
+pg = plot_grid(p1, p2, p3, ncol = 3)
+title = ggdraw() + draw_label("Data aggregated by shops")
+plot_grid(title, pg, ncol = 1, rel_heights = c(0.1, 1))
+```
+
+This relationship looks even better when aggregated to stores.
+
+```{r}
+cor.test(dataRelationsShop[, count], dataRelationsShop[, sum], 
+         method = "kendall")$estimate
+```
+
+The rank correlation value in this case increased up to 0.77. Generally, this means that the more different items a store offers for sale, the more total sales will be achieved.
+
 ## Check test set
 
 In order to achieve the best results, it is necessary to analyze the data contained in the test set. This will allow to pay attention to the potential difference between the training and test set.
@@ -567,8 +648,9 @@ TODO:
 8. dodac zmienna logiczna:
 a) czy produkt byl w trainset
 b) czy tuplet (sklep, produkt) byl w trainset
-9. pewnie bedzie trzeba dodac dane z testsetu do trainsetu i ustawic ich wartosci na 0
-10. pamietac zeby przyciac wartosci do zakresu 0-20 (wieksza niz 20 staja sie 20)
+9. pewnie bedzie trzeba dodac dane z testsetu do trainsetu i ustawic ich wartosci na 0 - zrobic test i porownac
+10. pamietac zeby przyciac wartosci do zakresu 0-20 (wieksza niz 20 staja sie 20) - zrobic to przed trenowaniem (raczej) czy po trenowaniu?
+11. czy sklep interentowy wyznaczyc jako osobny sklep (sprzedaje tych przedmioty cyfrowe)?
 11. *nie dodawac liczby dni w miesiecu ani dni gieldowych*
 
 Co można jeszcze zrobić:
