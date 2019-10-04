@@ -58,7 +58,6 @@ library("mlr3")
 library("ggplot2")
 library("cowplot")
 library("paradox")
-library("xgboost")
 library("mlr3tuning")
 library("data.table")
 library("mlr3learners")
@@ -570,11 +569,11 @@ endTime = Sys.time()
 
 # Feature engineer
 
-1. Extract month and year from date to separate variables.
+1. Create vectors with months and years.
 
 ```{r}
 month = rep(1:12, 3)
-year = c(rep(2013, 12), rep(2014, 12), rep(2015, 12))
+year = rep(2013:2015, each = 12)
 dates = data.table(date_block_num = seq(0, 35), month, year)
 ```
 
@@ -590,13 +589,14 @@ shopLoc = c(rep("Yakutsk", 2), "Adygea", "Balashikha", "Volzhsky", "Vologda",
             "Sergiyev Posad", "Surgut", "Tomsk", rep("Tyumen", 3), "Ufa", "Ufa", 
             "Khimki", "Online store 1C", "Chekhov", rep("Yakutsk", 2), "Yaroslavl")
 shopLoc = factor(shopLoc)
-shopLabels = data.table(shop_id = shops$shop_id, shopLabel = as.numeric(shopLoc))
+shopLabels = data.table(shop_id = factor(shops$shop_id), 
+                        shopLabel = as.numeric(shopLoc))
 ```
 
 3. Extract the main and secondary category names from the category description.
 
 ```{r collapse = TRUE}
-# This is not the same as the column "item_category_id"
+# This is not the same as the column "item_category_id" (n = 84)
 catNames = c("mainCategory", "subCategory")
 itemCat[, (catNames) := tstrsplit(item_category_name, " - ", 
                                   type.convert = TRUE, fixed = TRUE)]
@@ -644,7 +644,7 @@ salesPrepared = merge(salesPrepared, shopLabels, by = "shop_id")
 ```
 
 ```{r}
-# Convert selected variables to numeric data type.
+# Convert selected variables to numeric data type
 intCols = c("shop_id", "item_id")
 salesPrepared[, (intCols) := lapply(.SD, as.numeric), .SDcols = intCols]
 ```
@@ -668,12 +668,13 @@ lrn_xgb = mlr_learners$get("regr.xgboost")
 
 ps = ParamSet$new(
   params = list(
-    ParamDbl$new(id = "eta", lower = 0.2, upper = 0.4),
+    ParamDbl$new(id = "eta", lower = 0.05, upper = 0.4),
+    ParamDbl$new(id = "gamma", lower = 0, upper = 100),
     ParamInt$new(id = "max_depth", lower = 4, upper = 10),
     ParamDbl$new(id = "min_child_weight", lower = 1, upper = 300),
-    ParamDbl$new(id = "subsample", lower = 0.5, upper = 0.8),
+    ParamDbl$new(id = "subsample", lower = 0.5, upper = 1),
     ParamDbl$new(id = "colsample_bytree",  lower = 0.9, upper = 1),
-    ParamDbl$new(id = "colsample_bylevel", lower = 0.5, upper = 0.7),
+    ParamDbl$new(id = "colsample_bylevel", lower = 0.5, upper = 1),
     ParamInt$new(id = "nrounds", lower = 1, upper = 1000)
 ))
 
@@ -681,14 +682,16 @@ at = AutoTuner$new(learner = lrn_xgb,
                    resampling = rsmp("cv", folds = 2),
                    measures = msr("regr.rmse"), 
                    tune_ps = ps,
-                   terminator = term("evals", n_evals = 2),
+                   terminator = term("evals", n_evals = 1),
                    tuner = tnr("random_search"))
 
 resampling_outer = rsmp("cv", folds = 2)
 #resampling_outer = rsmp("holdout")
-rr = resample(task = task, learner = at, resampling = resampling_outer)
+# rr = resample(task = task, learner = at, resampling = resampling_outer)
 
-sprintf("RMSE: %s", round(sqrt(rr$aggregate()), 2))
+# sprintf("RMSE: %s", round(sqrt(rr$aggregate()), 2))
+
+
 ```
 
 # Summary
