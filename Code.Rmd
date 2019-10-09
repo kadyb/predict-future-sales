@@ -465,6 +465,8 @@ plot_grid(title, pg, ncol = 1, rel_heights = c(0.1, 1))
 You can notice the relationship between variables of total items sales and the number of unique items offered in the categories. There were no statistically significant relationships for other variables.
 
 ```{r}
+# The tau coefficient was used for testing because the distributions of the analyzed
+# variables were not close to the normal distribution and contained repeated values.
 cor.test(dataRelationsCat[, count], dataRelationsCat[, sum], 
          method = "kendall")$estimate
 ```
@@ -616,7 +618,7 @@ holidays = data.table(date_block_num = seq(0, 35),
                                    12, 5, 6, 4, 9, 5, 4, 5, 4, 4, 6, 4))
 ```
 
-5. Avarage exchange rate of dollar to ruble
+5. Avarage exchange rate of dollar to ruble.
 
 ```{r}
 # Source: https://www.x-rates.com/average/?from=USD&to=RUB&amount=1
@@ -691,8 +693,11 @@ resampling_outer = rsmp("cv", folds = 2)
 
 # sprintf("RMSE: %s", round(sqrt(rr$aggregate()), 2))
 
-
+# at$train(task)
+# at$predict_newdata(task, newdata)
 ```
+
+## Remarks
 
 # Summary
 
