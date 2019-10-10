@@ -636,7 +636,9 @@ exchange = data.table(date_block_num = seq(0, 35),
                                    57.156, 65.355, 66.950, 63.126, 65.083, 69.897))
 ```
 
-# Data preparation
+# Machine learning {.tabset .tabset-fade}
+
+## Data preparation
 
 ```{r}
 salesPrepared = sales[, .(item_cnt_month = sum(item_cnt_day)), 
@@ -670,7 +672,7 @@ testset = merge(testset, itemCat[, c(1, 5:7)], by = "item_id")
 
 Prepare testset.
 
-# Machine learning
+## Model training
 
 ```{r eval = FALSE}
 set.seed(1)
@@ -708,15 +710,18 @@ resampling_outer = rsmp("cv", folds = 2)
 # at$predict_newdata(task, newdata)
 ```
 
-## Remarks
+## Evaluation
+
+## Variable importance
 
 # Summary
+
+#### **Remarks**
 
 # TODO
 
 TODO:
 
-1. użyć xgboost lub ranger
 2. kiedy produkt pojawil sie na rynku (miesiac jako num block)
 3. ile czasu produkt byl na rynku (dni)
 4. ile razy przedmiot byl zwracany (albo czy byl w ogole zwracany)
@@ -728,8 +733,6 @@ a) czy produkt byl w trainset
 b) czy tuplet (sklep, produkt) byl w trainset
 9. pewnie bedzie trzeba dodac dane z testsetu do trainsetu i ustawic ich wartosci na 0 - zrobic test i porownac
 10. pamietac zeby przyciac wartosci do zakresu 0-20 (wieksza niz 20 staja sie 20) - zrobic to przed trenowaniem (raczej) czy po trenowaniu?
-11. czy sklep interentowy wyznaczyc jako osobny sklep (sprzedaje tych przedmioty cyfrowe)?
-11. *nie dodawac liczby dni w miesiecu ani dni gieldowych*
 
 Co można jeszcze zrobić:
 
