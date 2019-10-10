@@ -591,7 +591,7 @@ shopLoc = c(rep("Yakutsk", 2), "Adygea", "Balashikha", "Volzhsky", "Vologda",
             "Sergiyev Posad", "Surgut", "Tomsk", rep("Tyumen", 3), "Ufa", "Ufa", 
             "Khimki", "Online store 1C", "Chekhov", rep("Yakutsk", 2), "Yaroslavl")
 shopLoc = factor(shopLoc)
-shopLabels = data.table(shop_id = factor(shops$shop_id), 
+shopLabels = data.table(shop_id = shops$shop_id, 
                         shopLabel = as.numeric(shopLoc))
 ```
 
@@ -603,6 +603,11 @@ catNames = c("mainCategory", "subCategory")
 itemCat[, (catNames) := tstrsplit(item_category_name, " - ", 
                                   type.convert = TRUE, fixed = TRUE)]
 itemCat[is.na(subCategory), subCategory := mainCategory]
+factorCols = c("mainCategory", "subCategory")
+itemCat[, (factorCols) := lapply(.SD, factor), .SDcols = factorCols]
+itemCat[, mainCategoryID := as.numeric(mainCategory)]
+itemCat[, subCategoryID := as.numeric(subCategory)]
+itemCat = merge(itemCat, items[, -1], by = "item_category_id")
 
 paste0("Main category: ", length(unique(itemCat[, mainCategory])))
 paste0("Subcategory: ", length(unique(itemCat[, subCategory])))
@@ -634,30 +639,36 @@ exchange = data.table(date_block_num = seq(0, 35),
 # Data preparation
 
 ```{r}
-# Aggregate input data to main datatable
 salesPrepared = sales[, .(item_cnt_month = sum(item_cnt_day)), 
                     by = .(shop_id, item_id, date_block_num)]
 ```
 
-```{r}
-# Merge main datatable with created explanatory variables
-salesPrepared = merge(salesPrepared, dates, by = "date_block_num")
-salesPrepared = merge(salesPrepared, shopLabels, by = "shop_id")
-```
+Aggregate input data by month to main datatable.
 
 ```{r}
 # Convert selected variables to numeric data type
+# Don't use default as.numeric function because loss of information (drop some levels)
+as.numeric.factor = function(x) {as.numeric(levels(x))[x]}
 intCols = c("shop_id", "item_id")
-salesPrepared[, (intCols) := lapply(.SD, as.numeric), .SDcols = intCols]
+salesPrepared[, (intCols) := lapply(.SD, as.numeric.factor), .SDcols = intCols]
+
+salesPrepared = merge(salesPrepared, dates, by = "date_block_num")
+salesPrepared = merge(salesPrepared, shopLabels, by = "shop_id")
+salesPrepared = merge(salesPrepared, itemCat[, c(1, 5:7)], by = "item_id")
 ```
 
+Merge main datatable with created explanatory variables.
+
 ```{r}
-# Prepare testset
+testset[, (intCols) := lapply(.SD, as.numeric.factor), .SDcols = intCols]
 testset[, date_block_num := 34]
 testset[, month := 11]
 testset[, year := 2015]
 testset = merge(testset, shopLabels, by = "shop_id")
+testset = merge(testset, itemCat[, c(1, 5:7)], by = "item_id")
 ```
+
+Prepare testset.
 
 # Machine learning
 
