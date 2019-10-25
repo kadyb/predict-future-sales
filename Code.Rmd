@@ -570,7 +570,9 @@ In addition to the appearance of completely new items, there is also the situati
 endTime = Sys.time()
 ```
 
-# Feature engineer
+# Feature engineer {.tabset .tabset-fade}
+
+## Feature engineer
 
 1. Create vectors with months and years.
 
@@ -637,16 +639,16 @@ exchange = data.table(date_block_num = seq(0, 35),
                                    57.156, 65.355, 66.950, 63.126, 65.083, 69.897))
 ```
 
-# Machine learning {.tabset .tabset-fade}
-
 ## Data preparation
 
 ```{r}
 salesPrepared = sales[, .(item_cnt_month = sum(item_cnt_day)), 
                     by = .(shop_id, item_id, date_block_num)]
+salesPrepared[item_cnt_month < 0, "item_cnt_month"] = 0
+salesPrepared[item_cnt_month > 20, "item_cnt_month"] = 20
 ```
 
-Aggregate input data by month to main datatable.
+Aggregate input data by month to main datatable and cut to the required range of values.
 
 ```{r}
 # Convert selected variables to numeric data type
@@ -673,6 +675,8 @@ testset = merge(testset, itemCat[, c(1, 5:7)], by = "item_id")
 
 Prepare testset.
 
+# Machine learning {.tabset .tabset-fade}
+
 ## Model training
 
 ```{r eval = FALSE}
@@ -695,20 +699,18 @@ ps = ParamSet$new(
 ))
 
 at = AutoTuner$new(learner = lrn_xgb, 
-                   resampling = rsmp("cv", folds = 4),
+                   resampling = rsmp("cv", folds = 3),
                    measures = msr("regr.rmse"), 
                    tune_ps = ps,
-                   terminator = term("evals", n_evals = 10),
+                   terminator = term("evals", n_evals = 30),
                    tuner = tnr("random_search"))
 
 resampling_outer = rsmp("cv", folds = 3)
-#resampling_outer = rsmp("holdout")
 # rr = resample(task = task, learner = at, resampling = resampling_outer)
 
 # sprintf("RMSE: %s", round(sqrt(rr$aggregate()), 2))
 
 # at$train(task)
-# at$predict_newdata(task, newdata)
 ```
 
 ## Evaluation
@@ -733,9 +735,30 @@ resampling_outer = rsmp("cv", folds = 3)
 # as.data.table(filter)
 ```
 
+## Output data
+
+```{r}
+# testset = testset[order(ID)]
+# testset = testset[, -"ID"]
+# intCols = c("date_block_num", "month", "year")
+# testset[, (intCols) := lapply(.SD, as.integer), .SDcols = intCols]
+# results = as.data.table(at$predict_newdata(task, testset))$response
+# results[results < 0] = 0
+# results[results > 20] = 20
+# outputfile = data.table(ID = 0:214199, item_cnt_month = results)
+# write.csv(outputfile, "results.csv", row.names = FALSE, quote = FALSE)
+```
+
+Preparing the output file with results for the evaluation.
+
 # Summary
 
 #### **Remarks**
+
+The most important conclusions regarding this project:
+
+1. The use of original independent variables without any feature engineering resulted in an RMSE of 3.55.
+2. Training the model on a dependent variable with a limited range of values returns better results than later cutting the range to the required (RMSE decrease by 1.59).
 
 # TODO
 
@@ -747,11 +770,11 @@ TODO:
 5. ile razy produkt zostal sprzedany w poprzednim miesiacu 
 5. obliczyc iloczyn sprzedanych przedmiotow i ich ceny (ale co z tym zrobic, jesli nowe dane nie zawieraja ceny?)
 - np. obliczyc mediane cen kategorii produktow i potem to jakos sklasyfikowac (np. cena niska, cena srednia, cena wysoka)
-8. dodac zmienna logiczna:
+9. pewnie bedzie trzeba dodac dane z testsetu do trainsetu i ustawic ich wartosci na 0 - zrobic test i porownac. Albo zamiast 0 ustawic mediany
+10. dodac zmienna logiczna:
 a) czy produkt byl w trainset
 b) czy tuplet (sklep, produkt) byl w trainset
-9. pewnie bedzie trzeba dodac dane z testsetu do trainsetu i ustawic ich wartosci na 0 - zrobic test i porownac
-10. pamietac zeby przyciac wartosci do zakresu 0-20 (wieksza niz 20 staja sie 20) - zrobic to przed trenowaniem (raczej) czy po trenowaniu?
+
 
 Co można jeszcze zrobić:
 
