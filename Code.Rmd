@@ -58,6 +58,7 @@ library("mlr3")
 library("ggplot2")
 library("cowplot")
 library("paradox")
+library("stringr")
 library("mlr3tuning")
 library("data.table")
 library("mlr3filters")
@@ -458,9 +459,9 @@ p3 = ggplot(dataRelationsCat, aes(log(avg), log(sum))) +
   ylab("Sum of sold items [log]") +
   theme_light()
 
-pg = plot_grid(p1, p2, p3, ncol = 3)
-title = ggdraw() + draw_label("Data aggregated by categories")
-plot_grid(title, pg, ncol = 1, rel_heights = c(0.1, 1))
+pGrid = plot_grid(p1, p2, p3, ncol = 3)
+pTitle = ggdraw() + draw_label("Data aggregated by categories")
+plot_grid(pTitle, pGrid, ncol = 1, rel_heights = c(0.1, 1))
 ```
 
 You can notice the relationship between variables of total items sales and the number of unique items offered in the categories. There were no statistically significant relationships for other variables.
@@ -500,9 +501,9 @@ p3 = ggplot(dataRelationsShop, aes(avg, sqrt(sum))) +
   ylab("Sum of sold items [sqrt]") +
   theme_light()
 
-pg = plot_grid(p1, p2, p3, ncol = 3)
-title = ggdraw() + draw_label("Data aggregated by shops")
-plot_grid(title, pg, ncol = 1, rel_heights = c(0.1, 1))
+pGrid = plot_grid(p1, p2, p3, ncol = 3)
+pTitle = ggdraw() + draw_label("Data aggregated by shops")
+plot_grid(pTitle, pGrid, ncol = 1, rel_heights = c(0.1, 1))
 ```
 
 This relationship looks even better when aggregated to stores.
@@ -639,6 +640,44 @@ exchange = data.table(date_block_num = seq(0, 35),
                                    57.156, 65.355, 66.950, 63.126, 65.083, 69.897))
 ```
 
+6. Unification of product names and generating new IDs.
+
+```{r}
+items$cor_items = str_to_lower(items$item_name, locale = "ru")
+items$cor_items = sapply(str_split(items$cor_items, "\\("), `[`, 1)
+items$cor_items = sapply(str_split(items$cor_items, "\\["), `[`, 1)
+items$cor_items = str_replace_all(items$cor_items, "[^A-Za-z0-9А-Яа-я]+", " ")
+items$cor_items = str_squish(items$cor_items)
+items$cor_item_id = as.integer(as.factor(items$cor_items))
+```
+
+7. The month in which the product first appeared on the market and in specific stores.
+
+```{r}
+firstAppear = sales[, .(firstAppear = min(date_block_num)), by = .(item_id)]
+firstAppearShop = sales[, .(firstAppearShop = min(date_block_num)), 
+                        by = .(item_id, shop_id)]
+firstAppear$item_id = as.numeric(levels(firstAppear$item_id))[firstAppear$item_id]
+col = "firstAppearShop$item_id"
+firstAppearShop$item_id = as.numeric(levels(col))[col]
+```
+
+8. The number of months the product has been sold generally and in specific stores.
+
+```{r}
+salesDuration = sales[, .(salesDuration = max(date_block_num) - min(date_block_num)), 
+                      by = .(item_id)]
+salesDurationShop = sales[, .(max(date_block_num) - min(date_block_num)), 
+                          by = .(item_id, shop_id)]
+colnames(salesDurationShop)[3] = "salesDurationShop"
+col = "salesDuration$item_id"
+salesDuration$item_id = as.numeric(levels(col))[col]
+col = "salesDurationShop$item_id"
+salesDurationShop$item_id = as.numeric(levels(col))[col]
+```
+
+
+
 ## Data preparation
 
 ```{r}
@@ -660,6 +699,13 @@ salesPrepared[, (intCols) := lapply(.SD, as.numeric.factor), .SDcols = intCols]
 salesPrepared = merge(salesPrepared, dates, by = "date_block_num")
 salesPrepared = merge(salesPrepared, shopLabels, by = "shop_id")
 salesPrepared = merge(salesPrepared, itemCat[, c(1, 5:7)], by = "item_id")
+salesPrepared = merge(salesPrepared, holidays, by = "date_block_num")
+salesPrepared = merge(salesPrepared, exchange, by = "date_block_num")
+salesPrepared = merge(salesPrepared, items[, c(2, 5)], by = "item_id")
+salesPrepared = merge(salesPrepared, firstAppear, by = "item_id")
+salesPrepared = merge(salesPrepared, firstAppearShop, by = c("item_id", "shop_id"))
+salesPrepared = merge(salesPrepared, salesDuration, by = "item_id")
+salesPrepared = merge(salesPrepared, salesDurationShop, by = c("item_id", "shop_id"))
 ```
 
 Merge main datatable with created explanatory variables.
@@ -671,6 +717,9 @@ testset[, month := 11]
 testset[, year := 2015]
 testset = merge(testset, shopLabels, by = "shop_id")
 testset = merge(testset, itemCat[, c(1, 5:7)], by = "item_id")
+testset = merge(testset, holidays, by = "date_block_num")
+testset = merge(testset, exchange, by = "date_block_num")
+testset = merge(testset, items[, c(2, 5)], by = "item_id")
 ```
 
 Prepare testset.
@@ -679,7 +728,7 @@ Prepare testset.
 
 ## Model training
 
-```{r eval = FALSE}
+```{r eval = FALSE, include = FALSE}
 set.seed(1)
 
 task = TaskRegr$new("task", backend = salesPrepared, target = "item_cnt_month")
@@ -715,7 +764,7 @@ resampling_outer = rsmp("cv", folds = 3)
 
 ## Evaluation
 
-```{r}
+```{r eval = FALSE}
 # selected hyperparametrs
 # at$tuning_result$tune_x
 # error for these hyperparametrs
@@ -729,7 +778,7 @@ resampling_outer = rsmp("cv", folds = 3)
 
 ## Variable importance
 
-```{r}
+```{r eval = FALSE}
 # filter = flt("importance", learner = lrn_xgb)
 # filter$calculate(task)
 # as.data.table(filter)
@@ -737,7 +786,7 @@ resampling_outer = rsmp("cv", folds = 3)
 
 ## Output data
 
-```{r}
+```{r eval = FALSE}
 # testset = testset[order(ID)]
 # testset = testset[, -"ID"]
 # intCols = c("date_block_num", "month", "year")
@@ -764,8 +813,6 @@ The most important conclusions regarding this project:
 
 TODO:
 
-2. kiedy produkt pojawil sie na rynku (miesiac jako num block)
-3. ile czasu produkt byl na rynku (dni)
 4. ile razy przedmiot byl zwracany (albo czy byl w ogole zwracany)
 5. ile razy produkt zostal sprzedany w poprzednim miesiacu 
 5. obliczyc iloczyn sprzedanych przedmiotow i ich ceny (ale co z tym zrobic, jesli nowe dane nie zawieraja ceny?)
@@ -776,9 +823,9 @@ a) czy produkt byl w trainset
 b) czy tuplet (sklep, produkt) byl w trainset
 
 
-Co można jeszcze zrobić:
+Czego nie zrobiono:
 
-1. Unifikacja nazw przedmiotów (np. poprzez usunięcie zbędnych znaków czy wybranie dwóch pierwszych wyrazów) i wygenerowanie nowych ID. Wyszukanie podobieństw między nazwami (biblioteka "stringdist").
+1. Pominięto generowanie nowych ID przedmiotów na podstawie podobieństw między nazwami (biblioteka "stringdist"), ponieważ macierz wynikowa składała się z 22170^2 obserwacji.
 
 Inne modele:
 
