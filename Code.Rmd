@@ -651,29 +651,29 @@ items$cor_items = str_squish(items$cor_items)
 items$cor_item_id = as.integer(as.factor(items$cor_items))
 ```
 
+```{r}
+# Convert selected variables to numeric data type
+# Don't use default as.numeric function because loss of information (drop some levels)
+as.numeric.factor = function(x) {as.numeric(levels(x))[x]}
+intCols = c("shop_id", "item_id")
+sales[, (intCols) := lapply(.SD, as.numeric.factor), .SDcols = intCols]
+```
+
 7. The month in which the product first appeared on the market and in specific stores.
 
 ```{r}
 firstAppear = sales[, .(firstAppear = min(date_block_num)), by = .(item_id)]
 firstAppearShop = sales[, .(firstAppearShop = min(date_block_num)), 
                         by = .(item_id, shop_id)]
-firstAppear$item_id = as.numeric(levels(firstAppear$item_id))[firstAppear$item_id]
-col = "firstAppearShop$item_id"
-firstAppearShop$item_id = as.numeric(levels(col))[col]
 ```
 
 8. The number of months the product has been sold generally and in specific stores.
 
 ```{r}
-salesDuration = sales[, .(salesDuration = max(date_block_num) - min(date_block_num)), 
-                      by = .(item_id)]
-salesDurationShop = sales[, .(max(date_block_num) - min(date_block_num)), 
-                          by = .(item_id, shop_id)]
-colnames(salesDurationShop)[3] = "salesDurationShop"
-col = "salesDuration$item_id"
-salesDuration$item_id = as.numeric(levels(col))[col]
-col = "salesDurationShop$item_id"
-salesDurationShop$item_id = as.numeric(levels(col))[col]
+salesDur = sales[, .(salesDur = max(date_block_num) - min(date_block_num)),
+                 by = .(item_id)]
+salesDurShop = sales[, .(salesDurShop = max(date_block_num) - min(date_block_num)),
+                     by = .(item_id, shop_id)]
 ```
 
 
@@ -690,12 +690,6 @@ salesPrepared[item_cnt_month > 20, "item_cnt_month"] = 20
 Aggregate input data by month to main datatable and cut to the required range of values.
 
 ```{r}
-# Convert selected variables to numeric data type
-# Don't use default as.numeric function because loss of information (drop some levels)
-as.numeric.factor = function(x) {as.numeric(levels(x))[x]}
-intCols = c("shop_id", "item_id")
-salesPrepared[, (intCols) := lapply(.SD, as.numeric.factor), .SDcols = intCols]
-
 salesPrepared = merge(salesPrepared, dates, by = "date_block_num")
 salesPrepared = merge(salesPrepared, shopLabels, by = "shop_id")
 salesPrepared = merge(salesPrepared, itemCat[, c(1, 5:7)], by = "item_id")
@@ -704,8 +698,8 @@ salesPrepared = merge(salesPrepared, exchange, by = "date_block_num")
 salesPrepared = merge(salesPrepared, items[, c(2, 5)], by = "item_id")
 salesPrepared = merge(salesPrepared, firstAppear, by = "item_id")
 salesPrepared = merge(salesPrepared, firstAppearShop, by = c("item_id", "shop_id"))
-salesPrepared = merge(salesPrepared, salesDuration, by = "item_id")
-salesPrepared = merge(salesPrepared, salesDurationShop, by = c("item_id", "shop_id"))
+salesPrepared = merge(salesPrepared, salesDur, by = "item_id")
+salesPrepared = merge(salesPrepared, salesDurShop, by = c("item_id", "shop_id"))
 ```
 
 Merge main datatable with created explanatory variables.
@@ -720,6 +714,23 @@ testset = merge(testset, itemCat[, c(1, 5:7)], by = "item_id")
 testset = merge(testset, holidays, by = "date_block_num")
 testset = merge(testset, exchange, by = "date_block_num")
 testset = merge(testset, items[, c(2, 5)], by = "item_id")
+```
+
+```{r}
+# NA for items and (items, shop) which don't appear in sales datatable
+testset = merge(testset, firstAppear, by = "item_id", all.x = TRUE)
+testset[is.na(testset$firstAppear), "firstAppear"] = 0
+testset = merge(testset, firstAppearShop, by = c("item_id", "shop_id"), all.x = TRUE)
+testset[is.na(testset$firstAppearShop), "firstAppearShop"] = 0
+
+# NA for items and (items, shop) which don't appear in sales datatable
+# If the item was still sold in November, add one more month
+testset = merge(testset, salesDur, by = "item_id", all.x = TRUE)
+testset[, salesDur := salesDur + 1]
+testset[is.na(testset$salesDur), "salesDur"] = 0
+testset = merge(testset, salesDurShop, by = c("item_id", "shop_id"), all.x = TRUE)
+testset[, salesDurShop := salesDurShop + 1]
+testset[is.na(testset$salesDurShop), "salesDurShop"] = 0
 ```
 
 Prepare testset.
@@ -742,7 +753,7 @@ ps = ParamSet$new(
     ParamInt$new(id = "max_depth", lower = 4, upper = 10),
     ParamDbl$new(id = "min_child_weight", lower = 1, upper = 300),
     ParamDbl$new(id = "subsample", lower = 0.5, upper = 1),
-    ParamDbl$new(id = "colsample_bytree",  lower = 0.9, upper = 1),
+    ParamDbl$new(id = "colsample_bytree",  lower = 0.8, upper = 1),
     ParamDbl$new(id = "colsample_bylevel", lower = 0.5, upper = 1),
     ParamInt$new(id = "nrounds", lower = 1, upper = 1000)
 ))
@@ -751,7 +762,7 @@ at = AutoTuner$new(learner = lrn_xgb,
                    resampling = rsmp("cv", folds = 3),
                    measures = msr("regr.rmse"), 
                    tune_ps = ps,
-                   terminator = term("evals", n_evals = 30),
+                   terminator = term("evals", n_evals = 40),
                    tuner = tnr("random_search"))
 
 resampling_outer = rsmp("cv", folds = 3)
