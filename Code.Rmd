@@ -768,31 +768,53 @@ at = AutoTuner$new(learner = lrn_xgb,
 resampling_outer = rsmp("cv", folds = 3)
 # rr = resample(task = task, learner = at, resampling = resampling_outer)
 
-# sprintf("RMSE: %s", round(sqrt(rr$aggregate()), 2))
-
 # at$train(task)
 ```
 
 ## Evaluation
 
 ```{r eval = FALSE}
-# selected hyperparametrs
-# at$tuning_result$tune_x
-# error for these hyperparametrs
-# at$tuning_result$perf
-
-# inner loop error
-# at$tuning_instance$archive()$regr.rmse
-# outer loop error
-# rr$score(msr("regr.rmse"))$regr.rmse
+selected hyperparametrs
+as.data.table(at$tuning_result$tune_x)
 ```
+
+The lowest RMSE value of `r round(at$tuning_result$perf, 2)` was obtained for the above parameters.
+
+```{r eval = FALSE fig.height = 3}
+# inner cv error
+innerError = data.table(value = at$tuning_instance$archive()$regr.rmse,
+                      cv = "inner")
+# outer cv error
+outerError = data.table(value = rr$score(msr("regr.rmse"))$regr.rmse,
+                       cv = "outer") 
+
+cvError = rbind(innerError, outerError)
+
+ggplot(cvError) +
+  geom_boxplot(aes(x = cv, y = value)) +
+  xlab("Crossvalidation") +
+  ylab("RMSE") +
+  labs(title = "Model evaluation") +
+  scale_x_discrete(labels = c(paste("Inner\ni = ", nrow(innerError)), 
+                               paste("Outer\ni = ", nrow(outerError)))) +
+  theme_light()
+```
+
+The median of RMSE for inner crossvalidation was `r round(median(innerError$value), 2)`, while for outer crossvalidation was `r round(median(outerError$value), 2)`.
 
 ## Variable importance
 
 ```{r eval = FALSE}
-# filter = flt("importance", learner = lrn_xgb)
-# filter$calculate(task)
-# as.data.table(filter)
+filter = flt("importance", learner = lrn_xgb)
+filter$calculate(task)
+
+ggplot(as.data.table(filter), aes(x = reorder(feature, score), y = score)) +
+   geom_col() +
+   xlab("Variable") +
+   ylab("Importance") +
+   labs(title = "Variable importance") +
+   coord_flip() +
+   theme_light()
 ```
 
 ## Output data
@@ -825,13 +847,14 @@ The most important conclusions regarding this project:
 TODO:
 
 4. ile razy przedmiot byl zwracany (albo czy byl w ogole zwracany)
-5. ile razy produkt zostal sprzedany w poprzednim miesiacu 
+5. ile razy produkt zostal sprzedany w poprzednim miesiacu(!!!)
 5. obliczyc iloczyn sprzedanych przedmiotow i ich ceny (ale co z tym zrobic, jesli nowe dane nie zawieraja ceny?)
 - np. obliczyc mediane cen kategorii produktow i potem to jakos sklasyfikowac (np. cena niska, cena srednia, cena wysoka)
 9. pewnie bedzie trzeba dodac dane z testsetu do trainsetu i ustawic ich wartosci na 0 - zrobic test i porownac. Albo zamiast 0 ustawic mediany
 10. dodac zmienna logiczna:
 a) czy produkt byl w trainset
 b) czy tuplet (sklep, produkt) byl w trainset
+11. stworzyc komibnacji wszystkich mozliwych sklepow, przedmiotow i miesiecy, nastepnie przypisac wartosci liczby sprzedazy = 0, tym ktore nie pojawily sie w zbiorze treningowym(??????)
 
 
 Czego nie zrobiono:
