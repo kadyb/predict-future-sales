@@ -676,6 +676,18 @@ salesDurShop = sales[, .(salesDurShop = max(date_block_num) - min(date_block_num
                      by = .(item_id, shop_id)]
 ```
 
+9. The number of unique items in the shops
+
+```{r}
+numItemShop = sales[, .(numItemShop = uniqueN(item_id)), by = .(shop_id)]
+```
+
+10. Item sales in last month by shop
+```{r}
+# group_by(shop_id, item_id, date_block_num)
+# last_sales = sum(item_cnt_day)
+# jesli nie ma sprzedazy, to 0
+```
 
 
 ## Data preparation
@@ -700,6 +712,7 @@ salesPrepared = merge(salesPrepared, firstAppear, by = "item_id")
 salesPrepared = merge(salesPrepared, firstAppearShop, by = c("item_id", "shop_id"))
 salesPrepared = merge(salesPrepared, salesDur, by = "item_id")
 salesPrepared = merge(salesPrepared, salesDurShop, by = c("item_id", "shop_id"))
+salesPrepared = merge(salesPrepared, numItemShop, by = c("shop_id"))
 ```
 
 Merge main datatable with created explanatory variables.
@@ -714,9 +727,7 @@ testset = merge(testset, itemCat[, c(1, 5:7)], by = "item_id")
 testset = merge(testset, holidays, by = "date_block_num")
 testset = merge(testset, exchange, by = "date_block_num")
 testset = merge(testset, items[, c(2, 5)], by = "item_id")
-```
 
-```{r}
 # NA for items and (items, shop) which don't appear in sales datatable
 testset = merge(testset, firstAppear, by = "item_id", all.x = TRUE)
 testset[is.na(testset$firstAppear), "firstAppear"] = 0
@@ -726,11 +737,13 @@ testset[is.na(testset$firstAppearShop), "firstAppearShop"] = 0
 # NA for items and (items, shop) which don't appear in sales datatable
 # If the item was still sold in November, add one more month
 testset = merge(testset, salesDur, by = "item_id", all.x = TRUE)
-testset[, salesDur := salesDur + 1]
+testset[, salesDur := as.integer(salesDur + 1)]
 testset[is.na(testset$salesDur), "salesDur"] = 0
 testset = merge(testset, salesDurShop, by = c("item_id", "shop_id"), all.x = TRUE)
-testset[, salesDurShop := salesDurShop + 1]
+testset[, salesDurShop := as.integer(salesDurShop + 1)]
 testset[is.na(testset$salesDurShop), "salesDurShop"] = 0
+
+testset = merge(testset, numItemShop, by = c("shop_id"))
 ```
 
 Prepare testset.
@@ -774,13 +787,13 @@ resampling_outer = rsmp("cv", folds = 3)
 ## Evaluation
 
 ```{r eval = FALSE}
-selected hyperparametrs
+# selected hyperparametrs
 as.data.table(at$tuning_result$tune_x)
 ```
 
 The lowest RMSE value of `r round(at$tuning_result$perf, 2)` was obtained for the above parameters.
 
-```{r eval = FALSE fig.height = 3}
+```{r eval = FALSE, fig.height = 3}
 # inner cv error
 innerError = data.table(value = at$tuning_instance$archive()$regr.rmse,
                       cv = "inner")
@@ -820,15 +833,15 @@ ggplot(as.data.table(filter), aes(x = reorder(feature, score), y = score)) +
 ## Output data
 
 ```{r eval = FALSE}
-# testset = testset[order(ID)]
-# testset = testset[, -"ID"]
-# intCols = c("date_block_num", "month", "year")
-# testset[, (intCols) := lapply(.SD, as.integer), .SDcols = intCols]
-# results = as.data.table(at$predict_newdata(task, testset))$response
-# results[results < 0] = 0
-# results[results > 20] = 20
-# outputfile = data.table(ID = 0:214199, item_cnt_month = results)
-# write.csv(outputfile, "results.csv", row.names = FALSE, quote = FALSE)
+testset = testset[order(ID)]
+testset = testset[, -"ID"]
+intCols = c("date_block_num", "month", "year")
+testset[, (intCols) := lapply(.SD, as.integer), .SDcols = intCols]
+results = as.data.table(at$predict_newdata(task, testset))$response
+results[results < 0] = 0
+results[results > 20] = 20
+outputfile = data.table(ID = 0:214199, item_cnt_month = results)
+write.csv(outputfile, "results.csv", row.names = FALSE, quote = FALSE)
 ```
 
 Preparing the output file with results for the evaluation.
