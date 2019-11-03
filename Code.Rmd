@@ -683,18 +683,47 @@ numItemShop = sales[, .(numItemShop = uniqueN(item_id)), by = .(shop_id)]
 ```
 
 10. Item sales in last month by shop
-```{r}
+```{r eval = FALSE}
 # group_by(shop_id, item_id, date_block_num)
 # last_sales = sum(item_cnt_day)
 # jesli nie ma sprzedazy, to 0
+
+# powinienem dodac jeszcze dane z trainsetu tutaj
+
+salesLag = sales[, .(item_cnt_month = sum(item_cnt_day)),
+                 by = .(shop_id, item_id, date_block_num)]
+
+salesLag = salesLag[salesLag[, .(shop_id, item_id, item_cnt_month,
+                                 date_block_num = date_block_num + 1)],
+                    on = c("shop_id", "item_id", "date_block_num"),
+                    sales_lag_1 := i.item_cnt_month][]
+salesLag[is.na(sales_lag_1), "sales_lag_1"] = 0
+salesLag[sales_lag_1 < 0, "sales_lag_1"] = 0
+salesLag[sales_lag_1 > 20, "sales_lag_1"] = 20
+
+salesLag = salesLag[salesLag[, .(shop_id, item_id, item_cnt_month,
+                                 date_block_num = date_block_num + 2)],
+                    on = c("shop_id", "item_id", "date_block_num"),
+                    sales_lag_2 := i.item_cnt_month][]
+salesLag[is.na(sales_lag_2), "sales_lag_2"] = 0
+salesLag[sales_lag_2 < 0, "sales_lag_2"] = 0
+salesLag[sales_lag_2 > 20, "sales_lag_2"] = 20
+
+salesLag = salesLag[salesLag[, .(shop_id, item_id, item_cnt_month,
+                                 date_block_num = date_block_num + 3)],
+                    on = c("shop_id", "item_id", "date_block_num"),
+                    sales_lag_3 := i.item_cnt_month][]
+salesLag[is.na(sales_lag_3), "sales_lag_3"] = 0
+salesLag[sales_lag_3 < 0, "sales_lag_3"] = 0
+salesLag[sales_lag_3 > 20, "sales_lag_3"] = 20
 ```
 
 
 ## Data preparation
 
 ```{r}
-salesPrepared = sales[, .(item_cnt_month = sum(item_cnt_day)), 
-                    by = .(shop_id, item_id, date_block_num)]
+salesPrepared = sales[, .(item_cnt_month = sum(item_cnt_day)),
+                      by = .(shop_id, item_id, date_block_num)]
 salesPrepared[item_cnt_month < 0, "item_cnt_month"] = 0
 salesPrepared[item_cnt_month > 20, "item_cnt_month"] = 20
 ```
