@@ -58,7 +58,6 @@ library("mlr3")
 library("ggplot2")
 library("cowplot")
 library("paradox")
-library("stringr")
 library("mlr3tuning")
 library("data.table")
 library("mlr3filters")
@@ -643,11 +642,11 @@ exchange = data.table(date_block_num = seq(0, 35),
 6. Unification of product names and generating new IDs.
 
 ```{r}
-items$cor_items = str_to_lower(items$item_name, locale = "ru")
-items$cor_items = sapply(str_split(items$cor_items, "\\("), `[`, 1)
-items$cor_items = sapply(str_split(items$cor_items, "\\["), `[`, 1)
-items$cor_items = str_replace_all(items$cor_items, "[^A-Za-z0-9А-Яа-я]+", " ")
-items$cor_items = str_squish(items$cor_items)
+items$cor_items = tolower(items$item_name)
+items$cor_items = sapply(strsplit(items$cor_items, "\\("), `[`, 1)
+items$cor_items = sapply(strsplit(items$cor_items, "\\["), `[`, 1)
+items$cor_items = gsub("[^A-Za-z0-9А-Яа-я]+", " ", items$cor_items)
+items$cor_items = trimws(items$cor_items)
 items$cor_item_id = as.integer(as.factor(items$cor_items))
 ```
 
@@ -682,13 +681,14 @@ salesDurShop = sales[, .(salesDurShop = max(date_block_num) - min(date_block_num
 numItemShop = sales[, .(numItemShop = uniqueN(item_id)), by = .(shop_id)]
 ```
 
-10. Item sales in last month by shop
-```{r eval = FALSE}
+10. Item sales in previous months by shop
+```{r}
 # group_by(shop_id, item_id, date_block_num)
 # last_sales = sum(item_cnt_day)
 # jesli nie ma sprzedazy, to 0
 
 # powinienem dodac jeszcze dane z trainsetu tutaj
+# pamietac zeby zrobic jeszcze merga z trainsetem i testsetem
 
 salesLag = sales[, .(item_cnt_month = sum(item_cnt_day)),
                  by = .(shop_id, item_id, date_block_num)]
