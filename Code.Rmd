@@ -682,42 +682,35 @@ numItemShop = sales[, .(numItemShop = uniqueN(item_id)), by = .(shop_id)]
 ```
 
 10. Item sales in previous months by shop
+
 ```{r}
-# group_by(shop_id, item_id, date_block_num)
-# last_sales = sum(item_cnt_day)
-# jesli nie ma sprzedazy, to 0
-
-# powinienem dodac jeszcze dane z trainsetu tutaj
-# pamietac zeby zrobic jeszcze merga z trainsetem i testsetem
-
 salesLag = sales[, .(item_cnt_month = sum(item_cnt_day)),
                  by = .(shop_id, item_id, date_block_num)]
 
-salesLag = salesLag[salesLag[, .(shop_id, item_id, item_cnt_month,
-                                 date_block_num = date_block_num + 1)],
-                    on = c("shop_id", "item_id", "date_block_num"),
-                    sales_lag_1 := i.item_cnt_month][]
-salesLag[is.na(sales_lag_1), "sales_lag_1"] = 0
-salesLag[sales_lag_1 < 0, "sales_lag_1"] = 0
-salesLag[sales_lag_1 > 20, "sales_lag_1"] = 20
+testsetLag = testset[, -1]
+testsetLag[, (intCols) := lapply(.SD, as.numeric.factor), .SDcols = intCols]
+testsetLag[, date_block_num := 34]
+testsetLag[, item_cnt_month := NA]
+# merge shops and items from trainset and testset
+salesLag = rbindlist(list(salesLag, testsetLag))
 
-salesLag = salesLag[salesLag[, .(shop_id, item_id, item_cnt_month,
-                                 date_block_num = date_block_num + 2)],
+salesLagFun = function(dt, lag) {
+  colname = paste0("sales_lag_", lag)
+  dt = dt[dt[, .(shop_id, item_id, item_cnt_month,
+                                 date_block_num = date_block_num + lag)],
                     on = c("shop_id", "item_id", "date_block_num"),
-                    sales_lag_2 := i.item_cnt_month][]
-salesLag[is.na(sales_lag_2), "sales_lag_2"] = 0
-salesLag[sales_lag_2 < 0, "sales_lag_2"] = 0
-salesLag[sales_lag_2 > 20, "sales_lag_2"] = 20
+                    (colname) := i.item_cnt_month]
+  dt[is.na(get(colname)), (colname) := 0]
+  dt[get(colname) < 0, (colname) := 0]
+  dt[get(colname) > 20, (colname) := 20] 
+  return(dt)
+}
 
-salesLag = salesLag[salesLag[, .(shop_id, item_id, item_cnt_month,
-                                 date_block_num = date_block_num + 3)],
-                    on = c("shop_id", "item_id", "date_block_num"),
-                    sales_lag_3 := i.item_cnt_month][]
-salesLag[is.na(sales_lag_3), "sales_lag_3"] = 0
-salesLag[sales_lag_3 < 0, "sales_lag_3"] = 0
-salesLag[sales_lag_3 > 20, "sales_lag_3"] = 20
+salesLag = salesLagFun(salesLag, 1)
+salesLag = salesLagFun(salesLag, 2)
+salesLag = salesLagFun(salesLag, 3)
+salesLag = salesLag[, -"item_cnt_month"]
 ```
-
 
 ## Data preparation
 
@@ -742,9 +735,10 @@ salesPrepared = merge(salesPrepared, firstAppearShop, by = c("item_id", "shop_id
 salesPrepared = merge(salesPrepared, salesDur, by = "item_id")
 salesPrepared = merge(salesPrepared, salesDurShop, by = c("item_id", "shop_id"))
 salesPrepared = merge(salesPrepared, numItemShop, by = c("shop_id"))
+salesPrepared = merge(salesPrepared, salesLag, by = c("item_id", "shop_id", "date_block_num"))
 ```
 
-Merge main datatable with created explanatory variables.
+Merge main datatable with created explanatory variables. Finally, the data set consists of **`r nrow(salesPrepared)`** rows and **`r ncol(salesPrepared)`** columns.
 
 ```{r}
 testset[, (intCols) := lapply(.SD, as.numeric.factor), .SDcols = intCols]
@@ -773,6 +767,7 @@ testset[, salesDurShop := as.integer(salesDurShop + 1)]
 testset[is.na(testset$salesDurShop), "salesDurShop"] = 0
 
 testset = merge(testset, numItemShop, by = c("shop_id"))
+testset = merge(testset, salesLag, by = c("item_id", "shop_id", "date_block_num"))
 ```
 
 Prepare testset.
@@ -790,13 +785,14 @@ lrn_xgb = mlr_learners$get("regr.xgboost")
 
 ps = ParamSet$new(
   params = list(
-    ParamDbl$new(id = "eta", lower = 0.05, upper = 0.4),
+    ParamDbl$new(id = "eta", lower = 0.05, upper = 0.3),
     ParamDbl$new(id = "gamma", lower = 0, upper = 100),
     ParamInt$new(id = "max_depth", lower = 4, upper = 10),
     ParamDbl$new(id = "min_child_weight", lower = 1, upper = 300),
     ParamDbl$new(id = "subsample", lower = 0.5, upper = 1),
-    ParamDbl$new(id = "colsample_bytree",  lower = 0.8, upper = 1),
-    ParamDbl$new(id = "colsample_bylevel", lower = 0.5, upper = 1),
+    ParamDbl$new(id = "colsample_bytree",  lower = 0.7, upper = 1),
+    ParamDbl$new(id = "colsample_bylevel", lower = 0.7, upper = 1),
+    ParamDbl$new(id = "colsample_bynode", lower = 0.7, upper = 1),
     ParamInt$new(id = "nrounds", lower = 1, upper = 1000)
 ))
 
@@ -804,7 +800,7 @@ at = AutoTuner$new(learner = lrn_xgb,
                    resampling = rsmp("cv", folds = 3),
                    measures = msr("regr.rmse"), 
                    tune_ps = ps,
-                   terminator = term("evals", n_evals = 40),
+                   terminator = term("evals", n_evals = 50),
                    tuner = tnr("random_search"))
 
 resampling_outer = rsmp("cv", folds = 3)
@@ -889,19 +885,19 @@ The most important conclusions regarding this project:
 TODO:
 
 4. ile razy przedmiot byl zwracany (albo czy byl w ogole zwracany)
-5. ile razy produkt zostal sprzedany w poprzednim miesiacu(!!!)
 5. obliczyc iloczyn sprzedanych przedmiotow i ich ceny (ale co z tym zrobic, jesli nowe dane nie zawieraja ceny?)
 - np. obliczyc mediane cen kategorii produktow i potem to jakos sklasyfikowac (np. cena niska, cena srednia, cena wysoka)
 9. pewnie bedzie trzeba dodac dane z testsetu do trainsetu i ustawic ich wartosci na 0 - zrobic test i porownac. Albo zamiast 0 ustawic mediany
 10. dodac zmienna logiczna:
 a) czy produkt byl w trainset
 b) czy tuplet (sklep, produkt) byl w trainset
-11. stworzyc komibnacji wszystkich mozliwych sklepow, przedmiotow i miesiecy, nastepnie przypisac wartosci liczby sprzedazy = 0, tym ktore nie pojawily sie w zbiorze treningowym(??????)
+
 
 
 Czego nie zrobiono:
 
 1. Pominięto generowanie nowych ID przedmiotów na podstawie podobieństw między nazwami (biblioteka "stringdist"), ponieważ macierz wynikowa składała się z 22170^2 obserwacji.
+2. Nie stworzono kombinacji wszystkich przedmiotów w sklepach dla każdego miesiąca, ponieważ liczba wszystkich powtórzeń wynosiła blisko 43 mln.
 
 Inne modele:
 
