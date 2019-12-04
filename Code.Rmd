@@ -675,13 +675,13 @@ salesDurShop = sales[, .(salesDurShop = max(date_block_num) - min(date_block_num
                      by = .(item_id, shop_id)]
 ```
 
-9. The number of unique items in the shops
+9. The number of unique items in the shops.
 
 ```{r}
 numItemShop = sales[, .(numItemShop = uniqueN(item_id)), by = .(shop_id)]
 ```
 
-10. Item sales in previous months by shop
+10. Item sales in previous months by shop.
 
 ```{r}
 salesLag = sales[, .(item_cnt_month = sum(item_cnt_day)),
@@ -862,7 +862,7 @@ testset = testset[order(ID)]
 testset = testset[, -"ID"]
 intCols = c("date_block_num", "month", "year")
 testset[, (intCols) := lapply(.SD, as.integer), .SDcols = intCols]
-results = as.data.table(at$predict_newdata(task, testset))$response
+results = as.data.table(at$predict_newdata(testset, task))$response
 results[results < 0] = 0
 results[results > 20] = 20
 outputfile = data.table(ID = 0:214199, item_cnt_month = results)
@@ -884,7 +884,9 @@ The most important conclusions regarding this project:
 
 TODO:
 
-4. ile razy przedmiot byl zwracany (albo czy byl w ogole zwracany)
+4. Ile razy przez caly czas sprzedazy przedmiot byl zwracany
+Czy przedmiot kiedykolwiek byl zwracany (0/1)
+
 5. obliczyc iloczyn sprzedanych przedmiotow i ich ceny (ale co z tym zrobic, jesli nowe dane nie zawieraja ceny?)
 - np. obliczyc mediane cen kategorii produktow i potem to jakos sklasyfikowac (np. cena niska, cena srednia, cena wysoka)
 9. pewnie bedzie trzeba dodac dane z testsetu do trainsetu i ustawic ich wartosci na 0 - zrobic test i porownac. Albo zamiast 0 ustawic mediany
