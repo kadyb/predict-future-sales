@@ -694,22 +694,55 @@ testsetLag[, item_cnt_month := NA]
 # merge shops and items from trainset and testset
 salesLag = rbindlist(list(salesLag, testsetLag))
 
-salesLagFun = function(dt, lag) {
-  colname = paste0("sales_lag_", lag)
-  dt = dt[dt[, .(shop_id, item_id, item_cnt_month,
-                                 date_block_num = date_block_num + lag)],
-                    on = c("shop_id", "item_id", "date_block_num"),
-                    (colname) := i.item_cnt_month]
+# add "cor_item_id"
+salesLag = merge(salesLag, items[, c(2, 5)], by = "item_id")
+
+salesLagFun = function(dt, item_col, lag) {
+  colname = paste0("sales_lag_", lag, "_", item_col)
+  if(item_col == "item_id") {
+    dt = dt[dt[, .(shop_id, item_id, item_cnt_month,
+                                   date_block_num = date_block_num + lag)],
+                      on = c("shop_id", "item_id", "date_block_num"),
+                      (colname) := i.item_cnt_month]
+  } 
+  else if (item_col == "cor_item_id") {
+      dt = dt[dt[, .(shop_id, cor_item_id, item_cnt_month,
+                                   date_block_num = date_block_num + lag)],
+                      on = c("shop_id", "cor_item_id", "date_block_num"),
+                      (colname) := i.item_cnt_month]
+  }
+  else stop("Invalid item_col name.")
+  
   dt[is.na(get(colname)), (colname) := 0]
   dt[get(colname) < 0, (colname) := 0]
   dt[get(colname) > 20, (colname) := 20] 
   return(dt)
 }
 
-salesLag = salesLagFun(salesLag, 1)
-salesLag = salesLagFun(salesLag, 2)
-salesLag = salesLagFun(salesLag, 3)
+salesLag = salesLagFun(salesLag, "item_id", 1)
+salesLag = salesLagFun(salesLag, "item_id", 2)
+salesLag = salesLagFun(salesLag, "cor_item_id", 1)
+salesLag = salesLagFun(salesLag, "cor_item_id", 2)
 salesLag = salesLag[, -"item_cnt_month"]
+```
+
+11. Add new items from the testset to training data and set their sales value to 0. In addition, mark which item is new.
+
+```{r}
+newItems = data.table(pair = pairShopItemTest[subsetShopItem])
+newItems = CJ(pair = newItems$pair, date_block_num = 0:33)
+newItems = newItems[, c("shop_id", "item_id") := tstrsplit(pair, " ", fixed = TRUE)]
+newItems = newItems[, -"pair"]
+newItems[, item_cnt_month := 0]
+newItems[, (intCols) := lapply(.SD, as.integer), .SDcols = intCols]
+newItems[, newItemShop := 1]
+
+itemUniqueID = data.table(
+  item_id = as.numeric.factor(unique(testset[, item_id])),
+  newItem = !(unique(testset[, item_id]) %in% unique(sales[, item_id])) # negation
+)
+itemUniqueID$newItem = as.numeric(itemUniqueID$newItem)
+itemUniqueID = itemUniqueID[newItem == 1, ]
 ```
 
 ## Data preparation
@@ -719,6 +752,9 @@ salesPrepared = sales[, .(item_cnt_month = sum(item_cnt_day)),
                       by = .(shop_id, item_id, date_block_num)]
 salesPrepared[item_cnt_month < 0, "item_cnt_month"] = 0
 salesPrepared[item_cnt_month > 20, "item_cnt_month"] = 20
+
+# add new items from testset to trainset
+salesPrepared = rbindlist(list(salesPrepared, newItems), use.names = TRUE)
 ```
 
 Aggregate input data by month to main datatable and cut to the required range of values.
@@ -731,11 +767,20 @@ salesPrepared = merge(salesPrepared, holidays, by = "date_block_num")
 salesPrepared = merge(salesPrepared, exchange, by = "date_block_num")
 salesPrepared = merge(salesPrepared, items[, c(2, 5)], by = "item_id")
 salesPrepared = merge(salesPrepared, firstAppear, by = "item_id")
-salesPrepared = merge(salesPrepared, firstAppearShop, by = c("item_id", "shop_id"))
+salesPrepared = merge(salesPrepared, firstAppearShop, by = c("item_id", "shop_id"), all.x = TRUE)
 salesPrepared = merge(salesPrepared, salesDur, by = "item_id")
-salesPrepared = merge(salesPrepared, salesDurShop, by = c("item_id", "shop_id"))
+salesPrepared = merge(salesPrepared, salesDurShop, by = c("item_id", "shop_id"), all.x = TRUE)
 salesPrepared = merge(salesPrepared, numItemShop, by = c("shop_id"))
-salesPrepared = merge(salesPrepared, salesLag, by = c("item_id", "shop_id", "date_block_num"))
+salesPrepared = merge(salesPrepared, salesLag[, -4], by = c("item_id", "shop_id", "date_block_num"), all.x = TRUE)
+salesPrepared = merge(salesPrepared, itemUniqueID, by = "item_id", all.x = TRUE)
+
+# fill NAs
+salesPrepared[is.na(firstAppearShop), firstAppearShop := -1]
+salesPrepared[is.na(salesDurShop), salesDurShop := -1]
+salesPrepared[is.na(sales_lag_1_item_id), sales_lag_1_item_id := 0]
+salesPrepared[is.na(sales_lag_2_item_id), sales_lag_2_item_id := 0]
+salesPrepared[is.na(sales_lag_1_cor_item_id), sales_lag_1_cor_item_id := 0]
+salesPrepared[is.na(sales_lag_2_cor_item_id), sales_lag_2_cor_item_id := 0]
 ```
 
 Merge main datatable with created explanatory variables. Finally, the data set consists of **`r nrow(salesPrepared)`** rows and **`r ncol(salesPrepared)`** columns.
@@ -751,23 +796,23 @@ testset = merge(testset, holidays, by = "date_block_num")
 testset = merge(testset, exchange, by = "date_block_num")
 testset = merge(testset, items[, c(2, 5)], by = "item_id")
 
-# NA for items and (items, shop) which don't appear in sales datatable
+# Fill NAs for items and (items, shop) which don't appear in sales datatable
 testset = merge(testset, firstAppear, by = "item_id", all.x = TRUE)
-testset[is.na(testset$firstAppear), "firstAppear"] = 0
+testset[is.na(testset$firstAppear), "firstAppear"] = -1
 testset = merge(testset, firstAppearShop, by = c("item_id", "shop_id"), all.x = TRUE)
-testset[is.na(testset$firstAppearShop), "firstAppearShop"] = 0
+testset[is.na(testset$firstAppearShop), "firstAppearShop"] = -1
 
-# NA for items and (items, shop) which don't appear in sales datatable
+# Fill NAs for items and (items, shop) which don't appear in sales datatable
 # If the item was still sold in November, add one more month
 testset = merge(testset, salesDur, by = "item_id", all.x = TRUE)
 testset[, salesDur := as.integer(salesDur + 1)]
-testset[is.na(testset$salesDur), "salesDur"] = 0
+testset[is.na(testset$salesDur), "salesDur"] = -1
 testset = merge(testset, salesDurShop, by = c("item_id", "shop_id"), all.x = TRUE)
 testset[, salesDurShop := as.integer(salesDurShop + 1)]
-testset[is.na(testset$salesDurShop), "salesDurShop"] = 0
+testset[is.na(testset$salesDurShop), "salesDurShop"] = -1
 
 testset = merge(testset, numItemShop, by = c("shop_id"))
-testset = merge(testset, salesLag, by = c("item_id", "shop_id", "date_block_num"))
+testset = merge(testset, salesLag[, -4], by = c("item_id", "shop_id", "date_block_num"))
 ```
 
 Prepare testset.
@@ -776,7 +821,7 @@ Prepare testset.
 
 ## Model training
 
-```{r eval = FALSE, include = FALSE}
+```{r echo = FALSE, include = FALSE}
 set.seed(1)
 
 task = TaskRegr$new("task", backend = salesPrepared, target = "item_cnt_month")
@@ -811,14 +856,14 @@ resampling_outer = rsmp("cv", folds = 3)
 
 ## Evaluation
 
-```{r eval = FALSE}
+```{r}
 # selected hyperparametrs
 as.data.table(at$tuning_result$tune_x)
 ```
 
 The lowest RMSE value of `r round(at$tuning_result$perf, 2)` was obtained for the above parameters.
 
-```{r eval = FALSE, fig.height = 3}
+```{r fig.height = 3}
 # inner cv error
 innerError = data.table(value = at$tuning_instance$archive()$regr.rmse,
                       cv = "inner")
@@ -842,7 +887,7 @@ The median of RMSE for inner crossvalidation was `r round(median(innerError$valu
 
 ## Variable importance
 
-```{r eval = FALSE}
+```{r}
 filter = flt("importance", learner = lrn_xgb)
 filter$calculate(task)
 
@@ -857,7 +902,7 @@ ggplot(as.data.table(filter), aes(x = reorder(feature, score), y = score)) +
 
 ## Output data
 
-```{r eval = FALSE}
+```{r}
 testset = testset[order(ID)]
 testset = testset[, -"ID"]
 intCols = c("date_block_num", "month", "year")
@@ -879,6 +924,7 @@ The most important conclusions regarding this project:
 
 1. The use of original independent variables without any feature engineering resulted in an RMSE of 3.55.
 2. Training the model on a dependent variable with a limited range of values returns better results than later cutting the range to the required (RMSE decrease by 1.59).
+3. Surprisingly, including sales in previous months did not have a significant impact on improving the result (RMSE decrease by 0.1).
 
 # TODO
 
@@ -889,10 +935,6 @@ Czy przedmiot kiedykolwiek byl zwracany (0/1)
 
 5. obliczyc iloczyn sprzedanych przedmiotow i ich ceny (ale co z tym zrobic, jesli nowe dane nie zawieraja ceny?)
 - np. obliczyc mediane cen kategorii produktow i potem to jakos sklasyfikowac (np. cena niska, cena srednia, cena wysoka)
-9. pewnie bedzie trzeba dodac dane z testsetu do trainsetu i ustawic ich wartosci na 0 - zrobic test i porownac. Albo zamiast 0 ustawic mediany
-10. dodac zmienna logiczna:
-a) czy produkt byl w trainset
-b) czy tuplet (sklep, produkt) byl w trainset
 
 
 
