@@ -729,20 +729,13 @@ salesLag = salesLag[, -"item_cnt_month"]
 11. Add new items from the testset to training data and set their sales value to 0. In addition, mark which item is new.
 
 ```{r}
-newItems = data.table(pair = pairShopItemTest[subsetShopItem])
-newItems = CJ(pair = newItems$pair, date_block_num = 0:33)
-newItems = newItems[, c("shop_id", "item_id") := tstrsplit(pair, " ", fixed = TRUE)]
-newItems = newItems[, -"pair"]
+newItems = unique(testset$item_id)[!checkItemSubset]
+newItems = as.numeric.factor(newItems)
+newItems = CJ(item_id = newItems, 
+              shop_id = unique(sales$shop_id), 
+              date_block_num = 0:33)
 newItems[, item_cnt_month := 0]
-newItems[, (intCols) := lapply(.SD, as.integer), .SDcols = intCols]
-newItems[, newItemShop := 1]
-
-itemUniqueID = data.table(
-  item_id = as.numeric.factor(unique(testset[, item_id])),
-  newItem = !(unique(testset[, item_id]) %in% unique(sales[, item_id])) # negation
-)
-itemUniqueID$newItem = as.numeric(itemUniqueID$newItem)
-itemUniqueID = itemUniqueID[newItem == 1, ]
+newItems[, newItem := 1]
 ```
 
 ## Data preparation
@@ -752,6 +745,7 @@ salesPrepared = sales[, .(item_cnt_month = sum(item_cnt_day)),
                       by = .(shop_id, item_id, date_block_num)]
 salesPrepared[item_cnt_month < 0, "item_cnt_month"] = 0
 salesPrepared[item_cnt_month > 20, "item_cnt_month"] = 20
+salesPrepared[, newItem := 0]
 
 # add new items from testset to trainset
 salesPrepared = rbindlist(list(salesPrepared, newItems), use.names = TRUE)
@@ -766,17 +760,18 @@ salesPrepared = merge(salesPrepared, itemCat[, c(1, 5:7)], by = "item_id")
 salesPrepared = merge(salesPrepared, holidays, by = "date_block_num")
 salesPrepared = merge(salesPrepared, exchange, by = "date_block_num")
 salesPrepared = merge(salesPrepared, items[, c(2, 5)], by = "item_id")
-salesPrepared = merge(salesPrepared, firstAppear, by = "item_id")
+salesPrepared = merge(salesPrepared, firstAppear, by = "item_id", all.x = TRUE)
 salesPrepared = merge(salesPrepared, firstAppearShop, by = c("item_id", "shop_id"), all.x = TRUE)
-salesPrepared = merge(salesPrepared, salesDur, by = "item_id")
+salesPrepared = merge(salesPrepared, salesDur, by = "item_id", all.x = TRUE)
 salesPrepared = merge(salesPrepared, salesDurShop, by = c("item_id", "shop_id"), all.x = TRUE)
 salesPrepared = merge(salesPrepared, numItemShop, by = c("shop_id"))
 salesPrepared = merge(salesPrepared, salesLag[, -4], by = c("item_id", "shop_id", "date_block_num"), all.x = TRUE)
-salesPrepared = merge(salesPrepared, itemUniqueID, by = "item_id", all.x = TRUE)
 
 # fill NAs
 salesPrepared[is.na(firstAppearShop), firstAppearShop := -1]
+salesPrepared[is.na(firstAppear), firstAppear := -1]
 salesPrepared[is.na(salesDurShop), salesDurShop := -1]
+salesPrepared[is.na(salesDur), salesDur := -1]
 salesPrepared[is.na(sales_lag_1_item_id), sales_lag_1_item_id := 0]
 salesPrepared[is.na(sales_lag_2_item_id), sales_lag_2_item_id := 0]
 salesPrepared[is.na(sales_lag_1_cor_item_id), sales_lag_1_cor_item_id := 0]
@@ -813,6 +808,7 @@ testset[is.na(testset$salesDurShop), "salesDurShop"] = -1
 
 testset = merge(testset, numItemShop, by = c("shop_id"))
 testset = merge(testset, salesLag[, -4], by = c("item_id", "shop_id", "date_block_num"))
+testset$newItem = fifelse(testset$item_id %in% unique(newItems$item_id), 1, 0)
 ```
 
 Prepare testset.
@@ -821,7 +817,7 @@ Prepare testset.
 
 ## Model training
 
-```{r echo = FALSE, include = FALSE}
+```{r echo = FALSE}
 set.seed(1)
 
 task = TaskRegr$new("task", backend = salesPrepared, target = "item_cnt_month")
@@ -832,7 +828,7 @@ ps = ParamSet$new(
   params = list(
     ParamDbl$new(id = "eta", lower = 0.05, upper = 0.3),
     ParamDbl$new(id = "gamma", lower = 0, upper = 100),
-    ParamInt$new(id = "max_depth", lower = 4, upper = 10),
+    ParamInt$new(id = "max_depth", lower = 6, upper = 10),
     ParamDbl$new(id = "min_child_weight", lower = 1, upper = 300),
     ParamDbl$new(id = "subsample", lower = 0.5, upper = 1),
     ParamDbl$new(id = "colsample_bytree",  lower = 0.7, upper = 1),
@@ -849,9 +845,9 @@ at = AutoTuner$new(learner = lrn_xgb,
                    tuner = tnr("random_search"))
 
 resampling_outer = rsmp("cv", folds = 3)
-# rr = resample(task = task, learner = at, resampling = resampling_outer)
+rr = resample(task = task, learner = at, resampling = resampling_outer)
 
-# at$train(task)
+at$train(task)
 ```
 
 ## Evaluation
@@ -935,6 +931,18 @@ Czy przedmiot kiedykolwiek byl zwracany (0/1)
 
 5. obliczyc iloczyn sprzedanych przedmiotow i ich ceny (ale co z tym zrobic, jesli nowe dane nie zawieraja ceny?)
 - np. obliczyc mediane cen kategorii produktow i potem to jakos sklasyfikowac (np. cena niska, cena srednia, cena wysoka)
+
+6. dodac pary przedmiot-sklep do trainsetu
+```{r eval = FALSE, include = FALSE}
+# pairs consisting of the item and store which didn't appear in the trainset
+newItemPairs = data.table(pair = pairShopItemTest[!subsetShopItem])
+newItemPairs[, c("shop_id", "item_id") := tstrsplit(pair, " ", fixed = TRUE)]
+newItemPairs = newItemPairs[, -"pair"]
+newItemPairs[, (intCols) := lapply(.SD, as.integer), .SDcols = intCols]
+newItemPairs[, newItemShop := 1]
+
+salesPrepared[, newItemShop := 0]
+```
 
 
 
