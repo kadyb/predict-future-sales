@@ -316,7 +316,7 @@ testset[, shop_id := factor(shop_id)]
 
 ## Data mining {.tabset .tabset-fade}
 
-This subsection focuses on a more detailed analysis that will be useful for creating significant predictors, which should improve the efficiency of the predication model.
+This subsection focuses on a more detailed analysis that will be useful for creating significant predictors, which should improve the efficiency of the predictive model.
 
 ### Unique items in categories
 
