@@ -316,7 +316,7 @@ testset[, shop_id := factor(shop_id)]
 
 ## Data mining {.tabset .tabset-fade}
 
-This subsection focuses on a more detailed analysis that will be useful for creating significant predictors, which should improve the efficiency of the pedication model.
+This subsection focuses on a more detailed analysis that will be useful for creating significant predictors, which should improve the efficiency of the predication model.
 
 ### Unique items in categories
 
@@ -626,7 +626,7 @@ holidays = data.table(date_block_num = seq(0, 35),
                                    12, 5, 6, 4, 9, 5, 4, 5, 4, 4, 6, 4))
 ```
 
-5. Avarage exchange rate of dollar to ruble.
+5. Average exchange rate of dollar to ruble.
 
 ```{r}
 # Source: https://www.x-rates.com/average/?from=USD&to=RUB&amount=1
@@ -722,11 +722,37 @@ salesLagFun = function(dt, item_col, lag) {
 salesLag = salesLagFun(salesLag, "item_id", 1)
 salesLag = salesLagFun(salesLag, "item_id", 2)
 salesLag = salesLagFun(salesLag, "cor_item_id", 1)
-salesLag = salesLagFun(salesLag, "cor_item_id", 2)
 salesLag = salesLag[, -"item_cnt_month"]
 ```
 
-11. Add new items from the testset to training data and set their sales value to 0. In addition, mark which item is new.
+11. How many times the item was returned to the store.
+
+```{r}
+wasReturned = sales[item_cnt_day < 0, item_id]
+nReturns = data.table(item_id = wasReturned, wasReturned = 1)
+nReturns = nReturns[, .(item_returns = sum(wasReturned)), by = .(item_id)]
+```
+
+12. Average price of items by categories for individual months and their standard deviation.
+```{r}
+groupPrices = sales[, .(itemCategoryPriceMean = mean(item_price),
+                        itemCategoryPriceSD = sd(item_price)),
+                 by = .(item_category_id, date_block_num)]
+groupPrices[is.na(itemCategoryPriceSD), itemCategoryPriceSD := 0]
+groupPrices$item_category_id = as.numeric.factor(groupPrices$item_category_id)
+
+# data for month 34 will be taken from last month in groupPrices
+lastMonth = groupPrices[, .(lastMonth = max(date_block_num)), 
+                        by = .(item_category_id)]
+lastMonth = merge(lastMonth, groupPrices, 
+                  by.x = c("item_category_id", "lastMonth"), 
+                  by.y = c("item_category_id", "date_block_num"))
+lastMonth = lastMonth[, -"lastMonth"]
+lastMonth$date_block_num = 34
+groupPrices = rbindlist(list(groupPrices, lastMonth), use.names = TRUE)
+```
+
+13. Add new items from the test set to training data and set their sales value to 0. In addition, mark which item is new.
 
 ```{r}
 newItems = unique(testset$item_id)[!checkItemSubset]
@@ -736,6 +762,16 @@ newItems = CJ(item_id = newItems,
               date_block_num = 0:33)
 newItems[, item_cnt_month := 0]
 newItems[, newItem := 1]
+```
+
+```{r eval = FALSE, include = FALSE}
+# pairs consisting of the item and store which didn't appear in the trainset
+newItemPairs = data.table(pair = pairShopItemTest[!subsetShopItem])
+newItemPairs = CJ(pair = newItemPairs$pair, date_block_num = 0:33)
+newItemPairs[, c("shop_id", "item_id") := tstrsplit(pair, " ", fixed = TRUE)]
+newItemPairs = newItemPairs[, -"pair"]
+newItemPairs[, (intCols) := lapply(.SD, as.integer), .SDcols = intCols]
+newItemPairs[, newItemShop := 1]
 ```
 
 ## Data preparation
@@ -766,6 +802,8 @@ salesPrepared = merge(salesPrepared, salesDur, by = "item_id", all.x = TRUE)
 salesPrepared = merge(salesPrepared, salesDurShop, by = c("item_id", "shop_id"), all.x = TRUE)
 salesPrepared = merge(salesPrepared, numItemShop, by = c("shop_id"))
 salesPrepared = merge(salesPrepared, salesLag[, -4], by = c("item_id", "shop_id", "date_block_num"), all.x = TRUE)
+salesPrepared = merge(salesPrepared, nReturns, by = "item_id", all.x = TRUE)
+salesPrepared = merge(salesPrepared, groupPrices, by = c("item_category_id", "date_block_num"))
 
 # fill NAs
 salesPrepared[is.na(firstAppearShop), firstAppearShop := -1]
@@ -775,7 +813,7 @@ salesPrepared[is.na(salesDur), salesDur := -1]
 salesPrepared[is.na(sales_lag_1_item_id), sales_lag_1_item_id := 0]
 salesPrepared[is.na(sales_lag_2_item_id), sales_lag_2_item_id := 0]
 salesPrepared[is.na(sales_lag_1_cor_item_id), sales_lag_1_cor_item_id := 0]
-salesPrepared[is.na(sales_lag_2_cor_item_id), sales_lag_2_cor_item_id := 0]
+salesPrepared[is.na(item_returns), item_returns := 0]
 ```
 
 Merge main datatable with created explanatory variables. Finally, the data set consists of **`r nrow(salesPrepared)`** rows and **`r ncol(salesPrepared)`** columns.
@@ -808,6 +846,9 @@ testset[is.na(testset$salesDurShop), "salesDurShop"] = -1
 
 testset = merge(testset, numItemShop, by = c("shop_id"))
 testset = merge(testset, salesLag[, -4], by = c("item_id", "shop_id", "date_block_num"))
+testset = merge(testset, nReturns, by = "item_id", all.x = TRUE)
+testset[is.na(item_returns), item_returns := 0]
+testset = merge(testset, groupPrices, by = c("item_category_id", "date_block_num"))
 testset$newItem = fifelse(testset$item_id %in% unique(newItems$item_id), 1, 0)
 ```
 
@@ -817,7 +858,7 @@ Prepare testset.
 
 ## Model training
 
-```{r echo = FALSE}
+```{r include = FALSE}
 set.seed(1)
 
 task = TaskRegr$new("task", backend = salesPrepared, target = "item_cnt_month")
@@ -826,7 +867,7 @@ lrn_xgb = mlr_learners$get("regr.xgboost")
 
 ps = ParamSet$new(
   params = list(
-    ParamDbl$new(id = "eta", lower = 0.05, upper = 0.3),
+    ParamDbl$new(id = "eta", lower = 0.1, upper = 0.3),
     ParamDbl$new(id = "gamma", lower = 0, upper = 100),
     ParamInt$new(id = "max_depth", lower = 6, upper = 10),
     ParamDbl$new(id = "min_child_weight", lower = 1, upper = 300),
@@ -841,7 +882,7 @@ at = AutoTuner$new(learner = lrn_xgb,
                    resampling = rsmp("cv", folds = 3),
                    measures = msr("regr.rmse"), 
                    tune_ps = ps,
-                   terminator = term("evals", n_evals = 50),
+                   terminator = term("evals", n_evals = 40),
                    tuner = tnr("random_search"))
 
 resampling_outer = rsmp("cv", folds = 3)
@@ -913,6 +954,7 @@ write.csv(outputfile, "results.csv", row.names = FALSE, quote = FALSE)
 Preparing the output file with results for the evaluation.
 
 # Summary
+In this project, an analysis of past sales was performed and a predictive model of future sales of items in stores was developed based on historical data. Data mining allowed to choose the appropriate explanatory variables in the feature engineer process. Finally, an RMSE value of 1.47 was reached on the external test set using gradient boosting algorithm. The results obtained are completely reproducible including automatic data processing and modeling.
 
 #### **Remarks**
 
@@ -922,46 +964,23 @@ The most important conclusions regarding this project:
 2. Training the model on a dependent variable with a limited range of values returns better results than later cutting the range to the required (RMSE decrease by 1.59).
 3. Surprisingly, including sales in previous months did not have a significant impact on improving the result (RMSE decrease by 0.1).
 
-# TODO
+# Further opportunities
 
-TODO:
+Due to hardware and time limitations, two interesting solutions were abandoned, which could measurably affect further improvement of results:
 
-4. Ile razy przez caly czas sprzedazy przedmiot byl zwracany
-Czy przedmiot kiedykolwiek byl zwracany (0/1)
+1. Generating new item IDs based on similarities between names ("stringdist" library) because the resulting matrix consisted of 22170^2 observations.
+2. A combination of all items in stores was not created for each month because the number of repetitions was nearly 43 million. This would help approximate the distribution of the training set to the test set, in which new items and items-shops pair appear.
 
-5. obliczyc iloczyn sprzedanych przedmiotow i ich ceny (ale co z tym zrobic, jesli nowe dane nie zawieraja ceny?)
-- np. obliczyc mediane cen kategorii produktow i potem to jakos sklasyfikowac (np. cena niska, cena srednia, cena wysoka)
+In addition, there is still room for:
 
-6. dodac pary przedmiot-sklep do trainsetu
-```{r eval = FALSE, include = FALSE}
-# pairs consisting of the item and store which didn't appear in the trainset
-newItemPairs = data.table(pair = pairShopItemTest[!subsetShopItem])
-newItemPairs[, c("shop_id", "item_id") := tstrsplit(pair, " ", fixed = TRUE)]
-newItemPairs = newItemPairs[, -"pair"]
-newItemPairs[, (intCols) := lapply(.SD, as.integer), .SDcols = intCols]
-newItemPairs[, newItemShop := 1]
-
-salesPrepared[, newItemShop := 0]
-```
-
-
-
-Czego nie zrobiono:
-
-1. Pominięto generowanie nowych ID przedmiotów na podstawie podobieństw między nazwami (biblioteka "stringdist"), ponieważ macierz wynikowa składała się z 22170^2 obserwacji.
-2. Nie stworzono kombinacji wszystkich przedmiotów w sklepach dla każdego miesiąca, ponieważ liczba wszystkich powtórzeń wynosiła blisko 43 mln.
-
-Inne modele:
-
-1. ensemble modeling,
-2. lstm,
-3. hierarchical time series.
-
+1. The use of other algorithms such as long short-term memory (type of neural network), hierarchical time series or ensemble modeling.
+2. Optimization of model hyperparameters.
+3. Further feature engineering.
 
 ---
 
 <center> <font size = "2"> <i>
 Visualizations were made in `r round(difftime(endTime, startTime, units = "secs"))` s.
 
-Data processing and machine learning were done in `r round(difftime(Sys.time(), endTime, units = "mins"))` min.
+Data processing and machine learning were done in `r round(difftime(Sys.time(), endTime, units = "hours"))` hours.
 <center> </font> </i>
