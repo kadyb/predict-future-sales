@@ -572,7 +572,7 @@ endTime = Sys.time()
 
 # Feature engineer {.tabset .tabset-fade}
 
-## Feature engineer
+## Feature engineer 1
 
 1. Create vectors with months and years.
 
@@ -666,6 +666,8 @@ firstAppearShop = sales[, .(firstAppearShop = min(date_block_num)),
                         by = .(item_id, shop_id)]
 ```
 
+## Feature engineer 2
+
 8. The number of months the product has been sold generally and in specific stores.
 
 ```{r}
@@ -694,34 +696,20 @@ testsetLag[, item_cnt_month := NA]
 # merge shops and items from trainset and testset
 salesLag = rbindlist(list(salesLag, testsetLag))
 
-# add "cor_item_id"
-salesLag = merge(salesLag, items[, c(2, 5)], by = "item_id")
-
-salesLagFun = function(dt, item_col, lag) {
-  colname = paste0("sales_lag_", lag, "_", item_col)
-  if(item_col == "item_id") {
-    dt = dt[dt[, .(shop_id, item_id, item_cnt_month,
-                                   date_block_num = date_block_num + lag)],
-                      on = c("shop_id", "item_id", "date_block_num"),
-                      (colname) := i.item_cnt_month]
-  } 
-  else if (item_col == "cor_item_id") {
-      dt = dt[dt[, .(shop_id, cor_item_id, item_cnt_month,
-                                   date_block_num = date_block_num + lag)],
-                      on = c("shop_id", "cor_item_id", "date_block_num"),
-                      (colname) := i.item_cnt_month]
-  }
-  else stop("Invalid item_col name.")
-  
+salesLagFun = function(dt, lag) {
+  colname = paste0("sales_lag_", lag)
+  dt = dt[dt[, .(shop_id, item_id, item_cnt_month, 
+                 date_block_num = date_block_num + lag)],
+          on = c("shop_id", "item_id", "date_block_num"),
+          (colname) := i.item_cnt_month]
   dt[is.na(get(colname)), (colname) := 0]
   dt[get(colname) < 0, (colname) := 0]
   dt[get(colname) > 20, (colname) := 20] 
   return(dt)
 }
 
-salesLag = salesLagFun(salesLag, "item_id", 1)
-salesLag = salesLagFun(salesLag, "item_id", 2)
-salesLag = salesLagFun(salesLag, "cor_item_id", 1)
+salesLag = salesLagFun(salesLag, 1)
+salesLag = salesLagFun(salesLag, 2)
 salesLag = salesLag[, -"item_cnt_month"]
 ```
 
@@ -801,19 +789,20 @@ salesPrepared = merge(salesPrepared, firstAppearShop, by = c("item_id", "shop_id
 salesPrepared = merge(salesPrepared, salesDur, by = "item_id", all.x = TRUE)
 salesPrepared = merge(salesPrepared, salesDurShop, by = c("item_id", "shop_id"), all.x = TRUE)
 salesPrepared = merge(salesPrepared, numItemShop, by = c("shop_id"))
-salesPrepared = merge(salesPrepared, salesLag[, -4], by = c("item_id", "shop_id", "date_block_num"), all.x = TRUE)
+salesPrepared = merge(salesPrepared, salesLag, by = c("item_id", "shop_id", "date_block_num"), all.x = TRUE)
 salesPrepared = merge(salesPrepared, nReturns, by = "item_id", all.x = TRUE)
-salesPrepared = merge(salesPrepared, groupPrices, by = c("item_category_id", "date_block_num"))
+salesPrepared = merge(salesPrepared, groupPrices, by = c("item_category_id", "date_block_num"), all.x = TRUE)
 
 # fill NAs
 salesPrepared[is.na(firstAppearShop), firstAppearShop := -1]
 salesPrepared[is.na(firstAppear), firstAppear := -1]
 salesPrepared[is.na(salesDurShop), salesDurShop := -1]
 salesPrepared[is.na(salesDur), salesDur := -1]
-salesPrepared[is.na(sales_lag_1_item_id), sales_lag_1_item_id := 0]
-salesPrepared[is.na(sales_lag_2_item_id), sales_lag_2_item_id := 0]
-salesPrepared[is.na(sales_lag_1_cor_item_id), sales_lag_1_cor_item_id := 0]
+salesPrepared[is.na(sales_lag_1), sales_lag_1 := 0]
+salesPrepared[is.na(sales_lag_2), sales_lag_2 := 0]
 salesPrepared[is.na(item_returns), item_returns := 0]
+salesPrepared[is.na(itemCategoryPriceMean), itemCategoryPriceMean := -1]
+salesPrepared[is.na(itemCategoryPriceSD), itemCategoryPriceSD := -1]
 ```
 
 Merge main datatable with created explanatory variables. Finally, the data set consists of **`r nrow(salesPrepared)`** rows and **`r ncol(salesPrepared)`** columns.
@@ -845,7 +834,7 @@ testset[, salesDurShop := as.integer(salesDurShop + 1)]
 testset[is.na(testset$salesDurShop), "salesDurShop"] = -1
 
 testset = merge(testset, numItemShop, by = c("shop_id"))
-testset = merge(testset, salesLag[, -4], by = c("item_id", "shop_id", "date_block_num"))
+testset = merge(testset, salesLag, by = c("item_id", "shop_id", "date_block_num"))
 testset = merge(testset, nReturns, by = "item_id", all.x = TRUE)
 testset[is.na(item_returns), item_returns := 0]
 testset = merge(testset, groupPrices, by = c("item_category_id", "date_block_num"))
@@ -858,7 +847,7 @@ Prepare testset.
 
 ## Model training
 
-```{r include = FALSE}
+```{r results = 'hide'}
 set.seed(1)
 
 task = TaskRegr$new("task", backend = salesPrepared, target = "item_cnt_month")
@@ -894,8 +883,9 @@ at$train(task)
 ## Evaluation
 
 ```{r}
-# selected hyperparametrs
-as.data.table(at$tuning_result$tune_x)
+# selected hyperparameters
+param_dt = as.data.table(at$tuning_result$tune_x)
+transpose(param_dt, keep.names = "Hyperparameter")[, .(Hyperparameter, Value = V1)]
 ```
 
 The lowest RMSE value of `r round(at$tuning_result$perf, 2)` was obtained for the above parameters.
@@ -954,9 +944,9 @@ write.csv(outputfile, "results.csv", row.names = FALSE, quote = FALSE)
 Preparing the output file with results for the evaluation.
 
 # Summary
-In this project, an analysis of past sales was performed and a predictive model of future sales of items in stores was developed based on historical data. Data mining allowed to choose the appropriate explanatory variables in the feature engineer process. Finally, an RMSE value of 1.47 was reached on the external test set using gradient boosting algorithm. The results obtained are completely reproducible including automatic data processing and modeling.
+In this project, an analysis of past sales was performed and a predictive model of future sales of items in stores was developed based on historical data. Data mining allowed to choose the appropriate explanatory variables in the feature engineer process. Finally, an RMSE value of **1.3** was reached on the external test set using gradient boosting algorithm. The results obtained are completely reproducible including automatic data processing and modeling.
 
-#### **Remarks**
+## Remarks
 
 The most important conclusions regarding this project:
 
@@ -964,17 +954,17 @@ The most important conclusions regarding this project:
 2. Training the model on a dependent variable with a limited range of values returns better results than later cutting the range to the required (RMSE decrease by 1.59).
 3. Surprisingly, including sales in previous months did not have a significant impact on improving the result (RMSE decrease by 0.1).
 
-# Further opportunities
+## Further opportunities
 
 Due to hardware and time limitations, two interesting solutions were abandoned, which could measurably affect further improvement of results:
 
-1. Generating new item IDs based on similarities between names ("stringdist" library) because the resulting matrix consisted of 22170^2 observations.
+1. Generating new item IDs based on similarities between names ("*stringdist*" library) because the resulting matrix consisted of 22170^2 observations.
 2. A combination of all items in stores was not created for each month because the number of repetitions was nearly 43 million. This would help approximate the distribution of the training set to the test set, in which new items and items-shops pair appear.
 
 In addition, there is still room for:
 
 1. The use of other algorithms such as long short-term memory (type of neural network), hierarchical time series or ensemble modeling.
-2. Optimization of model hyperparameters.
+2. Optimization of model hyperparameters by increasing the number of search iterations.
 3. Further feature engineering.
 
 ---
